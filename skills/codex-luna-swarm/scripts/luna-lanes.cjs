@@ -27,9 +27,7 @@ const { basename, delimiter, dirname, isAbsolute, join, resolve } = require("nod
 const MODEL = "gpt-5.6-luna";
 const REASONING = "max";
 const SERVICE_TIER = "priority";
-const NORMAL_MAX_LANES = 15;
-const STRESS_MAX_LANES = 50;
-const DEFAULT_STRESS_START_INTERVAL_MS = 1_000;
+const DEFAULT_START_INTERVAL_MS = 1_000;
 const BUNDLED_CODEX = "/Applications/ChatGPT.app/Contents/Resources/codex";
 const HOMEBREW_CODEX = "/opt/homebrew/bin/codex";
 const LAUNCH_SCHEMA_VERSION = 1;
@@ -42,7 +40,7 @@ const MAX_EVENT_PREFIX_BYTES = 1024 * 1024;
 function usage() {
   return [
     "Usage: luna-lanes --manifest <absolute-json-path> [options]",
-    "       luna-lanes --count <1-50> --workdir <absolute-directory> --instructions-file <absolute-file> [options]",
+    "       luna-lanes --count <positive-integer> --workdir <absolute-directory> --instructions-file <absolute-file> [options]",
     "       luna-lanes --tasks-file <absolute-json-path> --workdir <absolute-directory> --instructions-file <absolute-file> [options]",
     "       luna-lanes --drain <absolute-output-directory>",
     "",
@@ -50,9 +48,8 @@ function usage() {
     "  --output-dir <absolute-new-directory>",
     "  --codex-bin <absolute-executable>",
     "  --task-template <text with optional {i} and {count}>",
-    "  --max-active <1-50>  Queue remaining tasks behind this active-lane cap",
+    "  --max-active <positive-integer>  Queue remaining tasks behind this active-lane cap",
     "  --start-interval-ms <0-60000>  Minimum time between lane starts",
-    "  --stress  Required when a direct launch contains 16-50 lanes",
     "  --ephemeral",
     "  --help",
   ].join("\n");
@@ -112,18 +109,13 @@ function quickManifest(options) {
     source = JSON.parse(readFileSync(tasksPath, "utf8"));
     if (!Array.isArray(source)) throw new Error("--tasks-file must contain a JSON array");
   } else {
-    if (!/^\d+$/.test(options.count)) throw new Error("--count must be an integer from 1 to 50");
+    if (!/^\d+$/.test(options.count)) throw new Error("--count must be a positive integer");
     const count = Number(options.count);
-    if (count < 1 || count > STRESS_MAX_LANES) throw new Error("--count must be an integer from 1 to 50");
+    if (!Number.isSafeInteger(count) || count < 1) throw new Error("--count must be a positive integer");
     source = Array.from({ length: count }, () => null);
   }
   const count = source.length;
-  if (count < 1 || count > STRESS_MAX_LANES) {
-    throw new Error("direct launch must contain 1-50 lanes");
-  }
-  if (count > NORMAL_MAX_LANES && !options.stress) {
-    throw new Error("direct launch of 16-50 lanes requires --stress");
-  }
+  if (count < 1) throw new Error("direct launch must contain at least one lane");
   if (!options.workdir) throw new Error("--workdir is required for a direct launch");
   if (!options.instructions_file) throw new Error("--instructions-file is required for a direct launch");
   const template =
@@ -174,18 +166,17 @@ function quickManifest(options) {
     maxActive: options.max_active,
     startIntervalMs:
       options.start_interval_ms ??
-      (options.tasks_file && count > NORMAL_MAX_LANES ? DEFAULT_STRESS_START_INTERVAL_MS : 0),
+      (count > 1 ? DEFAULT_START_INTERVAL_MS : 0),
     lanes,
   };
 }
 
 function launchPolicy(raw, laneCount) {
-  if (Array.isArray(raw)) return { maxActive: laneCount, startIntervalMs: 0 };
+  if (Array.isArray(raw)) {
+    return { maxActive: laneCount, startIntervalMs: laneCount > 1 ? DEFAULT_START_INTERVAL_MS : 0 };
+  }
   const maxActive = Number(raw?.maxActive ?? laneCount);
-  const startIntervalMs = Number(
-    raw?.startIntervalMs ??
-      (raw?.stress === true && laneCount > NORMAL_MAX_LANES ? DEFAULT_STRESS_START_INTERVAL_MS : 0),
-  );
+  const startIntervalMs = Number(raw?.startIntervalMs ?? (laneCount > 1 ? DEFAULT_START_INTERVAL_MS : 0));
   if (!Number.isInteger(maxActive) || maxActive < 1 || maxActive > laneCount) {
     throw new Error(`maxActive must be an integer from 1 to ${laneCount}`);
   }
@@ -228,13 +219,7 @@ function sharedInstructions(raw) {
 
 function normalizeManifest(raw) {
   const source = Array.isArray(raw) ? raw : raw?.lanes;
-  const stress = !Array.isArray(raw) && raw?.stress === true;
-  const maxLanes = stress ? STRESS_MAX_LANES : NORMAL_MAX_LANES;
-  if (!Array.isArray(source) || source.length < 1 || source.length > maxLanes) {
-    throw new Error(
-      `manifest must contain 1-${NORMAL_MAX_LANES} lanes, or 1-${STRESS_MAX_LANES} with stress: true`,
-    );
-  }
+  if (!Array.isArray(source) || source.length < 1) throw new Error("manifest must contain at least one lane");
   const defaultWorkdir = Array.isArray(raw) ? undefined : raw.workdir;
   const defaultSandbox = Array.isArray(raw) ? "read-only" : (raw.sandbox ?? "read-only");
   const instructions = sharedInstructions(raw);
@@ -851,7 +836,7 @@ async function main(argv) {
     return 0;
   }
   const quickOptionNames = ["count", "tasks_file", "workdir", "instructions_file", "task_template"];
-  const usesQuickLaunch = options.stress || quickOptionNames.some((name) => options[name] !== undefined);
+  const usesQuickLaunch = quickOptionNames.some((name) => options[name] !== undefined);
   const modeCount = Number(Boolean(options.manifest)) + Number(Boolean(options.drain)) + Number(usesQuickLaunch);
   if (modeCount !== 1) {
     throw new Error("choose exactly one of --manifest, a direct launch, or --drain");

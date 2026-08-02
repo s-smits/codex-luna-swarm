@@ -4,9 +4,9 @@
 When the operator requests Luna agents, use `$codex-luna-swarm` first; another skill may define
 the questions but does not replace it. Resolve every named packet or attachment from the current
 message before browsing, installation, repository inspection, or planning. If one is absent, ask
-for it immediately and stop. For 1-15 lanes, prefer native `luna_worker`. For an
-explicit 16-50 lanes, do not call `spawn_agent`: write one distinct task description per lane and
-invoke the installed launcher's `--tasks-file` route with `--stress`. For an investigation, the
+for it immediately and stop. For 1-15 lanes, prefer native `luna_worker`. For 16 or more, do not
+call `spawn_agent`: write one distinct task description per lane and invoke the installed
+launcher's `--tasks-file` route. The launcher has no lane-count ceiling. For an investigation, the
 main agent must give every lane an exhaustive, self-contained explanation of its owned angle,
 starting flows, independent hypotheses, source census, adjacent-finding boundary, Skill selection,
 and proof contract. A title, line range, or single question is not enough. Use `--count` only for

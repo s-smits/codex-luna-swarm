@@ -82,6 +82,7 @@ test("launches independent Luna lanes concurrently without shell interpolation",
       {
         workdir: root,
         instructionsFile: instructionsPath,
+        startIntervalMs: 0,
         lanes: [
           { name: "read_lane", task: `Inspect $(touch ${marker})` },
           { name: "rate_limited", task: "Inspect the limited lane." },
@@ -212,36 +213,25 @@ test("rejects ambiguous or unsafe lane manifests before launch", () => {
       name: `rank_${String(index + 1).padStart(2, "0")}`,
       task: `Return ${index + 1}`,
     }));
-  assert.equal(normalizeManifest({ stress: true, workdir: root, lanes: ranked(50) }).length, 50);
-  assert.throws(
-    () => normalizeManifest({ workdir: root, lanes: ranked(16) }),
-    /with stress: true/,
-  );
-  assert.throws(
-    () => normalizeManifest({ stress: true, workdir: root, lanes: ranked(51) }),
-    /with stress: true/,
-  );
+  assert.equal(normalizeManifest({ workdir: root, lanes: ranked(75) }).length, 75);
+  assert.throws(() => normalizeManifest({ workdir: root, lanes: [] }), /at least one lane/);
 
   const instructionsPath = join(root, "quick-instructions.md");
   writeFileSync(instructionsPath, "Shared packet");
   const direct = { workdir: root, instructions_file: instructionsPath };
   const quick = quickManifest({
     count: "50",
-    stress: true,
     ...direct,
   });
   assert.equal(quick.lanes.length, 50);
   assert.equal(quick.maxActive, undefined);
-  assert.equal(quick.startIntervalMs, 0);
+  assert.equal(quick.startIntervalMs, 1_000);
   assert.deepEqual(quick.lanes[0], {
     name: "luna_01",
     task: "You are investigator 1 of 50. Follow the shared instructions and return the requested report.",
   });
   assert.equal(quick.lanes[49].name, "luna_50");
-  assert.throws(
-    () => quickManifest({ count: "50", stress: false, ...direct }),
-    /requires --stress/,
-  );
+  assert.throws(() => quickManifest({ count: "9007199254740992", ...direct }), /positive integer/);
 
   const tasksPath = join(root, "tasks.json");
   writeFileSync(
@@ -271,11 +261,10 @@ test("rejects ambiguous or unsafe lane manifests before launch", () => {
 
   writeFileSync(
     tasksPath,
-    JSON.stringify(Array.from({ length: 50 }, (_, index) => `Distinct investigation ${index + 1}`)),
+    JSON.stringify(Array.from({ length: 75 }, (_, index) => `Distinct investigation ${index + 1}`)),
   );
   const paced = quickManifest({
     tasks_file: tasksPath,
-    stress: true,
     max_active: "7",
     ...direct,
   });

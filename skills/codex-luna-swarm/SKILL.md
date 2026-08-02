@@ -1,6 +1,6 @@
 ---
 name: codex-luna-swarm
-description: Launch and collect multiple independent gpt-5.6-luna subagents for bounded parallel work. This skill owns Luna transport even when another investigation or review skill defines the lane questions. Use whenever the user asks to launch Luna agents, a Luna swarm, many Luna lanes, or a concurrency test. For an explicit 16-50 lanes, invoke the direct launcher immediately instead of attempting native spawn_agent.
+description: Launch and collect multiple independent gpt-5.6-luna subagents for bounded parallel work. This skill owns Luna transport even when another investigation or review skill defines the lane questions. Use whenever the user asks to launch Luna agents, a Luna swarm, many Luna lanes, or a concurrency test. For 16 or more lanes, invoke the direct launcher immediately instead of attempting native spawn_agent.
 ---
 
 # Codex Luna Swarm
@@ -26,9 +26,9 @@ but this skill owns execution and must be used first.
 Route by count:
 
 - For 1-15 lanes, prefer native `luna_worker` agents.
-- For an explicit 16-50 lanes, skip native spawning. Write one distinct task description per lane,
-  then use the direct launcher with `--tasks-file` and `--stress`.
-- Refuse more than 50. Do not batch the request and call it concurrent.
+- For 16 or more lanes, skip native spawning. Write one distinct task description per lane, then
+  use the direct launcher with `--tasks-file`.
+- The direct launcher has no lane-count ceiling. Do not split one concurrency request into batches.
 
 ## Define the lanes
 
@@ -118,7 +118,6 @@ Launch every described lane with one command:
 ```sh
 node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
   --tasks-file /absolute/luna-tasks.json \
-  --stress \
   --workdir /absolute/worktree \
   --instructions-file /absolute/shared-instructions.md
 ```
@@ -133,9 +132,9 @@ directory. If the main session's shell tool is sandboxed, request one escalation
 command before starting it. This does not loosen the lane sandboxes: each read-only lane still
 receives `--sandbox read-only`.
 
-`--max-active N` queues excess work in the same launch. Stress task files use a one-second start interval;
-`--start-interval-ms N` overrides it. After a typed HTTP 429 rate-limit non-result, reduce
-the cap or pace and retry only missing lanes once the current launcher settles.
+`--max-active N` queues excess work in the same launch. Lanes use a one-second start interval by
+default; `--start-interval-ms N` overrides it. After a typed HTTP 429 rate-limit non-result, reduce
+the active count or pace and retry only missing lanes once the current launcher settles.
 
 Each result produces one compact `luna_lane.finished` stdout event. Monitor those events and use
 `--drain` for full reports; `luna_lanes.completed` and `summary.json` give the terminal counts. The
@@ -165,8 +164,7 @@ The top-level worktree and sandbox apply to every lane unless overridden. `sandb
 `read-only`. A `workspace-write` lane must declare non-empty `ownedPaths`. The legacy per-lane
 `prompt` and `workdir` form remains accepted.
 
-A normal manifest contains 1-15 lanes. Only when the user explicitly names 16-50 concurrent lanes,
-add `"stress": true`.
+A manifest contains one or more lanes. A larger count needs no extra flag.
 
 Launch once:
 

@@ -60,8 +60,8 @@ Wait for all three and summarize their evidence.
 ```
 
 Native `luna_worker` agents are preferred. If the active model catalogue rejects that agent, the
-skill uses its deterministic `codex exec` fallback without substituting another model. Normal work
-is capped at 15 lanes. An explicit request for 16-50 concurrent lanes enables stress mode.
+skill uses its deterministic `codex exec` fallback without substituting another model. Native work
+uses up to 15 lanes; larger requests use the direct launcher, which has no lane-count ceiling.
 
 For a shared packet and 50 distinct investigators, first write a JSON array containing one
 substantive `{ "name", "task" }` brief per investigator. Shared facts belong in the common packet,
@@ -72,7 +72,6 @@ is not a task brief. Then use one current-task command:
 ```sh
 node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
   --tasks-file /absolute/luna-tasks.json \
-  --stress \
   --workdir /absolute/current/git/root \
   --instructions-file /absolute/shared-instructions.md
 ```
@@ -81,9 +80,9 @@ node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
 the main agent's distinct task descriptions. Before launch, the main agent should reject any row
 that could be completed by answering one narrow question or inspecting one file.
 
-`--max-active` queues excess work in one launch. Stress task files start one second apart;
-`--start-interval-ms` overrides that pace. A typed HTTP 429 result means reducing the cap or pace
-and retrying only missing work after the launcher settles.
+`--max-active` queues excess work in one launch. Lanes start one second apart by default;
+`--start-interval-ms` overrides that pace. A typed HTTP 429 result means reducing the active count
+or pace and retrying only missing work after the launcher settles.
 
 Each lane prints one compact `luna_lane.finished` event; full reports remain behind `--drain`.
 `luna_lanes.completed` gives terminal counts. The installed `Stop` hook keeps the parent task active

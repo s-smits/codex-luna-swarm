@@ -7,6 +7,10 @@
   "bin": {
     "codex-luna-swarm": "./scripts/install.mjs"
   },
+  "files": [
+    "scripts/install.mjs",
+    "skills/codex-luna-swarm"
+  ],
   "engines": {
     "node": ">=20"
   },

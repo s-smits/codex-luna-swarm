@@ -72,6 +72,10 @@ node /path/to/codex-luna-swarm/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
 `--count 50` is reserved for an explicit rank-based concurrency test. Investigations should use
 the main agent's distinct task descriptions.
 
+The launcher needs access to the active Codex state directory because it starts nested Codex CLI
+processes. If the main shell tool is sandboxed, grant the launcher command that access once; the
+individual lane sandboxes remain read-only.
+
 The fallback's `--drain` command prints each newly finished report once. The main agent does not
 need to read or reproduce the launcher.
 

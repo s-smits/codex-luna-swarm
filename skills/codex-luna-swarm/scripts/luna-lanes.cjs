@@ -284,7 +284,7 @@ function resolveCodexBinary(override) {
 }
 
 function createOutputDirectory(explicit) {
-  if (!explicit) return mkdtempSync(join(tmpdir(), "luna-lanes-"));
+  if (!explicit) return realpathSync(mkdtempSync(join(tmpdir(), "luna-lanes-")));
   if (!isAbsolute(explicit)) throw new Error("--output-dir must be absolute");
   const target = resolve(explicit);
   if (existsSync(target)) throw new Error("--output-dir must not already exist");
@@ -540,10 +540,18 @@ function readLaunch(outputDirectory) {
   const path = join(outputDir, "launch.json");
   if (!regularFileExists(path)) throw new Error(`not a Luna lane output directory: ${outputDir}`);
   const launch = readJson(path, "launch record");
+  let recordedOutputDir = null;
+  try {
+    if (typeof launch?.outputDir === "string") {
+      recordedOutputDir = absoluteExistingDirectory(launch.outputDir, "launch.outputDir");
+    }
+  } catch {
+    // The structural check below reports one stable invalid-record error.
+  }
   if (
     launch?.schemaVersion !== LAUNCH_SCHEMA_VERSION ||
     launch?.type !== "luna_lanes.launch" ||
-    launch?.outputDir !== outputDir ||
+    recordedOutputDir !== outputDir ||
     !Array.isArray(launch?.lanes)
   ) {
     throw new Error(`invalid Luna launch record: ${path}`);

@@ -118,6 +118,13 @@ test("launches independent Luna lanes concurrently without shell interpolation",
     assert.ok(existsSync(join(outputDir, "summary.json")));
     assert.match(readFileSync(join(outputDir, "reports.md"), "utf8"), /## read_lane[\s\S]*code from read_lane/);
 
+    const launchPath = join(outputDir, "launch.json");
+    const launchRecord = JSON.parse(readFileSync(launchPath, "utf8"));
+    if (launchRecord.outputDir.startsWith("/private/var/")) {
+      launchRecord.outputDir = launchRecord.outputDir.slice("/private".length);
+      writeFileSync(launchPath, `${JSON.stringify(launchRecord, null, 2)}\n`);
+    }
+
     const outsideReport = join(root, "outside.md");
     writeFileSync(outsideReport, "must not be drained\n");
     const resultPath = join(outputDir, "read_lane.result.json");

@@ -81,6 +81,11 @@ Each task row may be a `{ "name", "task" }` object or a task string, in which ca
 assigns a numbered name. Keep each task concrete and bounded. The tasks-file form is read-only;
 use a manifest for write lanes or per-lane worktrees.
 
+The launcher starts nested Codex CLI processes and therefore needs access to the active Codex state
+directory. If the main session's shell tool is sandboxed, request one escalation for the launcher
+command before starting it. This does not loosen the lane sandboxes: each read-only lane still
+receives `--sandbox read-only`.
+
 Use `--count N` only for a genuine concurrency test or when the shared packet itself maps each
 investigator number to a distinct assignment. It creates `luna_01` through `luna_N`; an optional
 `--task-template` may use `{i}` and `{count}`. Do not use generic numbered prompts when the main

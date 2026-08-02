@@ -6,6 +6,7 @@ another skill defines the investigation. For 1-15 lanes, prefer native `luna_wor
 explicit 16-50 lanes, do not call `spawn_agent`: write one distinct task description per lane and
 invoke the installed launcher's `--tasks-file` route with `--stress`. Use `--count` only for an
 explicit rank-based concurrency test. Start it in the same turn; do not stop after promising to
-launch. Preserve Luna identity; never substitute Sol, Terra, or a coordinator. Do not read or
+launch. A sandboxed parent must grant the launcher access to Codex state; lane sandboxes remain
+read-only. Preserve Luna identity; never substitute Sol, Terra, or a coordinator. Do not read or
 reimplement the launcher.
 <!-- codex-luna-swarm:end -->

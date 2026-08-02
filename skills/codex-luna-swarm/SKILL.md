@@ -124,34 +124,19 @@ directory. If the main session's shell tool is sandboxed, request one escalation
 command before starting it. This does not loosen the lane sandboxes: each read-only lane still
 receives `--sandbox read-only`.
 
-`--max-active N` is optional and keeps all described tasks in one launch while only N are active;
-the remainder stay queued. Do not split or discard tasks merely to reduce a rate-limited burst.
-Stress task files use a one-second start interval by default. Use `--start-interval-ms N` when the
-operator requests another pace. When stderr proves HTTP 429 or another rate-limit non-result, lower
-the active cap or increase the interval, then retry only missing lanes after the current launcher
-settles.
+`--max-active N` queues excess work in the same launch. Stress task files use a one-second start interval;
+`--start-interval-ms N` overrides it. After a typed HTTP 429 rate-limit non-result, reduce
+the cap or pace and retry only missing lanes once the current launcher settles.
 
-The launcher writes a compact `luna_lane.finished` JSON event to stdout immediately when each lane
-completes, fails, or cannot spawn. Treat that event as the progress hook: continue monitoring the
-launcher session, use its counts to notice terminal or missing work, and call `--drain` for full
-reports. Terminal stdout is one compact `luna_lanes.completed` event with completed, failed, and
-rate-limited counts plus archive paths; `summary.json` remains the full record. Do not wait silently
-for all lanes when finish events are available.
+Each result produces one compact `luna_lane.finished` stdout event. Monitor those events and use
+`--drain` for full reports; `luna_lanes.completed` and `summary.json` give the terminal counts. The
+installed repo-local `Stop` hook keeps only its parent task active and wakes it once after terminal
+or crash. Trust a new or changed project hook once through `/hooks`; child lanes and other task IDs
+are excluded.
 
-The installer also adds a repo-local Codex `Stop` hook. Project hooks require one explicit trust
-review through `/hooks` after installation or change; do not bypass that review. Once trusted, the
-hook checks a task-bound temporary launch registry. It keeps only the parent task active while its
-launcher is alive and produces one continuation after terminal or crash so the main agent drains
-and settles the run. Luna child sessions carry an exclusion marker, and a different Codex task ID
-is not affected. The hook complements the finish-event stream; it does not replace `--drain`.
-
-Run the launcher with the repository's required Node version in the same shell-tool call. Shell-tool
-environment changes do not persist into a later call. When a worktree contains an exact `.nvmrc`,
-the launcher checks its own runtime before it creates an output directory or starts a lane. It also
-records the Node executable, puts that executable first on every lane's `PATH`, and gives nested zsh
-login shells a private startup directory. This prevents user startup files from silently replacing
-the verified runtime. Treat a runtime-preflight refusal as zero lanes launched; select the required
-Node version and retry the one launch command.
+Select the repository's Node version in the same shell-tool call as the launcher. An exact `.nvmrc`
+mismatch refuses before launch. Nested lanes inherit that executable through a private zsh startup
+directory, so user startup files cannot replace the verified runtime.
 
 Use `--count N` only for a genuine concurrency test or when the shared packet itself maps each
 investigator number to a distinct assignment. It creates `luna_01` through `luna_N`; an optional

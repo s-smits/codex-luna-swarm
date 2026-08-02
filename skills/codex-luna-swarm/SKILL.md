@@ -24,12 +24,43 @@ Route by count:
 ## Define the lanes
 
 1. Respect the exact lane count named by the user.
-2. Give every lane one concrete task, a unique lowercase underscore name, exact paths or revision,
-   its authority, observed facts, the question, and the required output.
-3. Put shared evidence and output rules in one shared instruction packet. Keep each lane task short.
+2. Give every lane one concrete owned angle, a unique lowercase underscore name, exact paths or
+   revision, its authority, observed facts, the reason the angle matters, and the required output.
+3. Put genuinely common evidence and output rules in one shared instruction packet. Do not use the
+   common packet as a substitute for explaining each lane's substantive scope.
 4. Default to read-only. A write lane must own explicit paths or responsibility and must be told
    that other agents may be editing the repository.
 5. Do not use a coordinator that creates more agents. Do not let a lane create another lane.
+
+For a many-lane investigation, the main agent writes an exhaustive, self-contained explanation for
+each lane. A supplied list of questions is seed material, not a ready task file. Each explanation
+must include:
+
+- the owned review angle, its boundary, and why it matters;
+- the exact state or revision and the principal paths or producer -> projection -> consumer ->
+  decision flows where inspection should begin;
+- the minimum questions to settle, while saying they are not a ceiling on material findings inside
+  the owned angle;
+- a requirement to develop and test at least three plausible hypotheses, including an innocent or
+  intentional explanation, rather than confirming a suggested defect;
+- the expected source census: entry points, callers, tests, runtime or receipt paths, and relevant
+  history where available;
+- permission to report a material adjacent defect inside the owned angle, with enough evidence to
+  distinguish it from duplication with another lane;
+- the correction and proof contract: propose the smallest correction only for a proved defect,
+  include a hostile or negative test, and state remaining uncertainty; and
+- when Skills are relevant, a requirement that the lane itself selects and reads one to three of
+  them before investigation. Do not assign the same generic Skills to every lane merely to satisfy
+  a count.
+
+Exhaustive briefing does not prescribe a verdict. The Luna agent still owns its hypotheses,
+evidence search, and conclusion. Do not encode a preferred finding in the task.
+
+Before launch, inspect the complete task file and regenerate weak rows. Reject a row when it is only
+a title, attachment line range, restated yes/no question, or file name; when it could be completed
+by inspecting one file; or when changing the lane number would make it equivalent to another row.
+Confirm that every row has its own angle, starting flows, hypothesis requirement, source-census
+requirement, adjacency allowance, Skill-selection rule when applicable, and proof contract.
 
 For investigation, treat lane reports as research. Verify any finding that changes a decision
 against source or receipts in the main session.
@@ -62,8 +93,14 @@ descriptions; the shared packet owns only common evidence, constraints, and outp
 
 ```json
 [
-  { "name": "receipts", "task": "Audit receipt identity and cite the deciding rows." },
-  { "name": "runtime", "task": "Classify runtime failures and typed non-results." }
+  {
+    "name": "receipts",
+    "task": "Own receipt identity from creation through projection and final decision. Begin at the receipt constructors, every public projection, their consumers, the sealed runtime records, relevant tests, and recent history. Establish at least three competing explanations for any mismatch, including an intentional representation difference, and try to falsify each. The named identity questions are a minimum, not a ceiling: report material adjacent binding defects within this angle. Cite exact paths and commands. Propose the smallest owner-level correction only for a proved defect, with a hostile test and remaining uncertainty. Select and read one to three relevant repository Skills before investigating."
+  },
+  {
+    "name": "runtime",
+    "task": "Own runtime failure classification from process result through non-result typing, denominators, receipts, and downstream promotion decisions. Census entry points, callers, tests, observed runtime records, and relevant history. Form and test at least three hypotheses, including correct intentional classification. Follow material adjacent defects inside this boundary even when the starting questions omit them. Cite exact evidence and commands. For a proved defect only, propose the smallest correction plus a negative case and say what remains unproved. Select and read one to three relevant repository Skills before investigating."
+  }
 ]
 ```
 
@@ -78,8 +115,9 @@ node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
 ```
 
 Each task row may be a `{ "name", "task" }` object or a task string, in which case the launcher
-assigns a numbered name. Keep each task concrete and bounded. The tasks-file form is read-only;
-use a manifest for write lanes or per-lane worktrees.
+assigns a numbered name. Investigation rows should use named objects so the main agent can inspect
+their independence before launch. Keep each task bounded but fully briefed. The tasks-file form is
+read-only; use a manifest for write lanes or per-lane worktrees.
 
 The launcher starts nested Codex CLI processes and therefore needs access to the active Codex state
 directory. If the main session's shell tool is sandboxed, request one escalation for the launcher

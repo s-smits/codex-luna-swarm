@@ -31,6 +31,7 @@ test("installs, checks, updates, and removes only managed paths", () => {
   const firstAgents = readFileSync(agentsPath, "utf8");
   assert.match(firstAgents, /# Existing rules/);
   assert.match(firstAgents, /codex-luna-swarm:start/);
+  assert.match(firstAgents, /exhaustive, self-contained explanation/);
   assert.equal((firstAgents.match(/codex-luna-swarm:start/g) ?? []).length, 1);
 
   assert.equal(runInstaller({ target: root, mode: "check", force: false }).status, "ok");

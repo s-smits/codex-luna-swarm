@@ -7,7 +7,8 @@ URL together with the work to run:
 
 ```text
 Use https://github.com/s-smits/codex-luna-swarm in this repository and launch 50 Luna investigators
-from the attached shared instruction packet.
+from the attached shared instruction packet. Before launch, write an exhaustive, self-contained
+brief for each investigator. The supplied questions are starting points, not the complete scope.
 ```
 
 Codex should treat its current Git root as the target. It only needs another path when the current
@@ -58,8 +59,11 @@ Native `luna_worker` agents are preferred. If the active model catalogue rejects
 skill uses its deterministic `codex exec` fallback without substituting another model. Normal work
 is capped at 15 lanes. An explicit request for 16-50 concurrent lanes enables stress mode.
 
-For a shared packet and 50 distinct investigators, first write a JSON array containing one short
-`{ "name", "task" }` description per investigator. Then use one current-task command:
+For a shared packet and 50 distinct investigators, first write a JSON array containing one
+substantive `{ "name", "task" }` brief per investigator. Shared facts belong in the common packet,
+but each task must still explain its owned angle, starting evidence, expected depth, independent
+hypothesis work, permitted adjacent findings, and report contract. A title or attachment line range
+is not a task brief. Then use one current-task command:
 
 ```sh
 node /path/to/codex-luna-swarm/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
@@ -70,7 +74,8 @@ node /path/to/codex-luna-swarm/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
 ```
 
 `--count 50` is reserved for an explicit rank-based concurrency test. Investigations should use
-the main agent's distinct task descriptions.
+the main agent's distinct task descriptions. Before launch, the main agent should reject any row
+that could be completed by answering one narrow question or inspecting one file.
 
 The launcher needs access to the active Codex state directory because it starts nested Codex CLI
 processes. If the main shell tool is sandboxed, grant the launcher command that access once; the

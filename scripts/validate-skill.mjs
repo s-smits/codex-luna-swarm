@@ -42,12 +42,21 @@ if (!fields.get("description") || fields.get("description").length < 40) {
   throw new Error("skill description is too short");
 }
 if (/\bTODO\b/.test(text)) throw new Error("SKILL.md still contains TODO text");
+for (const expected of [
+  "exhaustive, self-contained explanation",
+  "at least three plausible hypotheses",
+  "source census",
+  "not a ceiling",
+]) {
+  if (!text.includes(expected)) throw new Error(`SKILL.md is missing lane-quality rule: ${expected}`);
+}
 
 const metadata = readFileSync(metadataFile, "utf8");
 for (const expected of [
   'display_name: "Codex Luna Swarm"',
   "short_description:",
   'default_prompt: "Use $codex-luna-swarm',
+  "exhaustive, self-contained explanation",
 ]) {
   if (!metadata.includes(expected)) throw new Error(`openai.yaml is missing ${expected}`);
 }

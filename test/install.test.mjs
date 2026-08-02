@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { installBlock, parseArgs, removeBlock, runInstaller } from "../scripts/install.mjs";
 
 const roots = [];
@@ -29,6 +30,12 @@ test("installs, checks, updates, and removes only managed paths", () => {
 
   const installed = runInstaller({ target: root, mode: "install", force: false });
   assert.equal(installed.status, "installed");
+  assert.deepEqual(installed.checks, {
+    skill: true,
+    agent: true,
+    agentsBlock: true,
+    configBlock: true,
+  });
   assert.ok(existsSync(join(root, ".agents", "skills", "codex-luna-swarm", "SKILL.md")));
   assert.ok(existsSync(join(root, ".codex", "agents", "luna_worker.toml")));
   const firstAgents = readFileSync(agentsPath, "utf8");
@@ -80,6 +87,25 @@ test("managed block helpers preserve surrounding text and reject broken markers"
     () => installBlock(`${snippet}\n<!-- codex-luna-swarm:end -->\n`, snippet),
     /more than one/,
   );
+  assert.equal(parseArgs([]).target, process.cwd());
   assert.throws(() => parseArgs(["--target", "relative"]), /absolute path/);
   assert.throws(() => parseArgs(["--target", "/tmp", "--check", "--force"]), /does not accept/);
+});
+
+test("package bin symlink invokes the installer", () => {
+  const root = repository();
+  const binDirectory = mkdtempSync(join(tmpdir(), "codex-luna-bin-test-"));
+  roots.push(binDirectory);
+  const bin = join(binDirectory, "codex-luna-swarm");
+  const installer = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "install.mjs");
+  symlinkSync(installer, bin);
+
+  const result = JSON.parse(execFileSync(bin, [], { cwd: root, encoding: "utf8" }));
+  assert.equal(result.status, "installed");
+  assert.deepEqual(result.checks, {
+    skill: true,
+    agent: true,
+    agentsBlock: true,
+    configBlock: true,
+  });
 });

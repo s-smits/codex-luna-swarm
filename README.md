@@ -9,6 +9,8 @@ URL together with the work to run:
 Use https://github.com/s-smits/codex-luna-swarm in this repository and launch 50 Luna investigators
 from the attached shared instruction packet. Before launch, write an exhaustive, self-contained
 brief for each investigator. The supplied questions are starting points, not the complete scope.
+The attachment in this message is required. If it is absent, ask for it immediately and do nothing
+else.
 ```
 
 Codex should treat its current Git root as the target. It only needs another path when the current
@@ -27,29 +29,26 @@ Nothing is added to global Codex configuration.
 
 The scripts support Node 20 and newer; CI covers Node 20, 22, 24 and 26.
 
-For the Codex agent handling the request:
+Before setup, resolve every attachment or path named by the user from the current message. If a
+required input is absent, ask for it immediately. Do not browse, install, inspect the repository,
+or search other tasks first.
 
-1. Resolve the current Git root and inspect its `AGENTS.md` instructions and `git status --short`.
-2. Obtain this repository outside the target worktree.
-3. Check for an existing Luna skill, `luna_worker` definition, or managed AGENTS block. Preserve
-   unrelated changes and ask before replacing a differing installation.
-4. Run:
+Then run one command from the target repository:
 
-   ```sh
-   node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root
-   node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root --check
-   ```
+```sh
+npx --yes --package 'github:s-smits/codex-luna-swarm#main' -- codex-luna-swarm --force
+```
 
-5. Show the target diff. Review and trust the project hook once through Codex `/hooks`; Codex skips
-   changed project hooks until they are trusted. A new Codex task will discover the installed Skill,
-   custom agent, and hook.
+The command obtains the current `main`, installs or updates only the managed paths, and checks the
+result before returning success. Do not clone this repository separately or run its upstream tests
+as part of ordinary use. Show the target diff. Review and trust the project hook once through Codex
+`/hooks`; Codex skips a new or changed project hook until it is trusted. A new Codex task discovers
+the installed Skill, custom agent, and hook.
 
 If the user also requested a launch, continue in the current task. Do not wait for Skill discovery:
-invoke the launcher from the obtained copy of this repository.
-
-Use `--force` only after reviewing an existing managed installation. The installer changes only
-the skill directory, custom-agent file, and its marked blocks in `AGENTS.md` and
-`.codex/config.toml`. It does not copy environment files or configuration from another repository.
+invoke the installed launcher. `--force` synchronises only the Skill-owned directory, custom-agent
+file, and marked blocks in `AGENTS.md` and `.codex/config.toml`; unrelated content is preserved.
+The installer does not copy environment files or configuration from another repository.
 
 ## Use
 
@@ -71,7 +70,7 @@ hypothesis work, permitted adjacent findings, and report contract. A title or at
 is not a task brief. Then use one current-task command:
 
 ```sh
-node /path/to/codex-luna-swarm/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
+node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
   --tasks-file /absolute/luna-tasks.json \
   --stress \
   --workdir /absolute/current/git/root \
@@ -101,9 +100,9 @@ need to read or reproduce the launcher.
 ## Check or remove
 
 ```sh
-node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root --check
-node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root --remove
+npx --yes --package 'github:s-smits/codex-luna-swarm#main' -- codex-luna-swarm --check
+npx --yes --package 'github:s-smits/codex-luna-swarm#main' -- codex-luna-swarm --remove
 ```
 
-Removal preserves unrelated `AGENTS.md` and `.codex/config.toml` content. It refuses to delete
-modified managed files or a modified managed block unless `--force` is explicit.
+Removal preserves unrelated `AGENTS.md` and `.codex/config.toml` content. It refuses to delete a
+modified managed file or block unless `--force` is explicit.

@@ -4,6 +4,9 @@
   "private": true,
   "description": "Repo-scoped Codex skill for launching independent Luna subagents.",
   "type": "module",
+  "bin": {
+    "codex-luna-swarm": "./scripts/install.mjs"
+  },
   "engines": {
     "node": ">=20"
   },

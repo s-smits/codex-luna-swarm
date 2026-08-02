@@ -8,11 +8,20 @@ description: Launch and collect multiple independent gpt-5.6-luna subagents for 
 Launch one independent Luna worker per bounded task. Keep orchestration in the main session and
 return concise lane reports without filling the main context with intermediate work.
 
+## Check required inputs first
+
+Before browsing, installation, repository inspection, or lane planning, resolve every packet,
+attachment, and user-supplied path named in the current message. If a required input is absent,
+ask for it immediately and stop. Do not search earlier tasks, substitute a similarly named file,
+or perform setup while waiting. Missing work is not a reason to weaken the requested lane count or
+brief quality.
+
 ## Act on a launch request
 
-Start the launch in the same turn as the request. Do not stop after saying that the lanes will be
-launched. Read a shared instruction packet once, resolve its path once, and pass it to the
-launcher. Another skill may define the investigation, but this skill still owns how Luna runs.
+After the required-input check passes, start the launch in the same turn as the request. Do not
+stop after saying that the lanes will be launched. Read a shared instruction packet once, resolve
+its path once, and pass it to the launcher. Another skill may define the investigation questions,
+but this skill owns execution and must be used first.
 
 Route by count:
 

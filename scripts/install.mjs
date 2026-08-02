@@ -27,14 +27,15 @@ const CONFIG_END_MARKER = "# codex-luna-swarm:end";
 function usage() {
   return [
     "Usage:",
-    "  node scripts/install.mjs --target <absolute-git-path> [--force]",
-    "  node scripts/install.mjs --target <absolute-git-path> --check",
-    "  node scripts/install.mjs --target <absolute-git-path> --remove [--force]",
+    "  codex-luna-swarm [--target <absolute-git-path>] [--force]",
+    "  codex-luna-swarm [--target <absolute-git-path>] --check",
+    "  codex-luna-swarm [--target <absolute-git-path>] --remove [--force]",
   ].join("\n");
 }
 
 export function parseArgs(argv) {
-  const options = { mode: "install", force: false };
+  const options = { mode: "install", force: false, target: process.cwd() };
+  let targetWasSet = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--help") {
@@ -49,15 +50,15 @@ export function parseArgs(argv) {
     } else if (argument === "--target") {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new Error("Missing value for --target");
-      if (options.target) throw new Error("Duplicate argument: --target");
+      if (targetWasSet) throw new Error("Duplicate argument: --target");
       options.target = value;
+      targetWasSet = true;
       index += 1;
     } else {
       throw new Error(`Unknown argument: ${argument}`);
     }
   }
   if (options.help) return options;
-  if (!options.target) throw new Error("--target is required");
   if (!isAbsolute(options.target)) throw new Error("--target must be an absolute path");
   if (options.mode === "check" && options.force) throw new Error("--check does not accept --force");
   return options;
@@ -263,11 +264,13 @@ export function runInstaller(rawOptions) {
   if (agentsAfter !== agentsBefore) atomicWrite(destination.agents, agentsAfter);
   const configAfter = installBlock(configBefore, configSnippet, configMarkers);
   if (configAfter !== configBefore) atomicWrite(destination.config, configAfter);
+  const { checks } = runInstaller({ target, mode: "check", force: false });
   return {
     status: "installed",
     mode: "install",
     target,
     paths: destination,
+    checks,
   };
 }
 
@@ -282,7 +285,16 @@ async function main(argv) {
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+function isEntrypoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+  }
+}
+
+if (isEntrypoint()) {
   main(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;

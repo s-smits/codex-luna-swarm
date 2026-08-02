@@ -48,6 +48,7 @@ for (const expected of [
   "at least three plausible hypotheses",
   "source census",
   "not a ceiling",
+  "current message",
   "one-second start interval",
   "luna_lane.finished",
   "--max-active",
@@ -60,7 +61,7 @@ for (const expected of [
   'display_name: "Codex Luna Swarm"',
   "short_description:",
   'default_prompt: "Use $codex-luna-swarm',
-  "exhaustive, self-contained explanation",
+  "verify the named inputs",
 ]) {
   if (!metadata.includes(expected)) throw new Error(`openai.yaml is missing ${expected}`);
 }

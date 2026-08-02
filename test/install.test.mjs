@@ -22,7 +22,10 @@ after(() => {
 test("installs, checks, updates, and removes only managed paths", () => {
   const root = repository();
   const agentsPath = join(root, "AGENTS.md");
+  const configPath = join(root, ".codex", "config.toml");
+  mkdirSync(join(root, ".codex"), { recursive: true });
   writeFileSync(agentsPath, "# Existing rules\n\nKeep this text.\n");
+  writeFileSync(configPath, "[features]\nhooks = true\n");
 
   const installed = runInstaller({ target: root, mode: "install", force: false });
   assert.equal(installed.status, "installed");
@@ -33,6 +36,10 @@ test("installs, checks, updates, and removes only managed paths", () => {
   assert.match(firstAgents, /codex-luna-swarm:start/);
   assert.match(firstAgents, /exhaustive, self-contained explanation/);
   assert.equal((firstAgents.match(/codex-luna-swarm:start/g) ?? []).length, 1);
+  const firstConfig = readFileSync(configPath, "utf8");
+  assert.match(firstConfig, /\[features\]/);
+  assert.match(firstConfig, /\[\[hooks\.Stop\]\]/);
+  assert.match(firstConfig, /luna-stop-hook\.cjs/);
 
   assert.equal(runInstaller({ target: root, mode: "check", force: false }).status, "ok");
   runInstaller({ target: root, mode: "install", force: false });
@@ -56,6 +63,7 @@ test("installs, checks, updates, and removes only managed paths", () => {
 
   runInstaller({ target: root, mode: "remove", force: false });
   assert.equal(readFileSync(agentsPath, "utf8"), "# Existing rules\n\nKeep this text.\n");
+  assert.equal(readFileSync(configPath, "utf8"), "[features]\nhooks = true\n");
   assert.equal(existsSync(join(root, ".agents", "skills", "codex-luna-swarm")), false);
   assert.equal(existsSync(agentPath), false);
 });

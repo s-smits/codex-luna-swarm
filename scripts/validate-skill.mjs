@@ -17,8 +17,10 @@ for (const path of [
   skillFile,
   metadataFile,
   join(skill, "scripts", "luna-lanes.cjs"),
+  join(skill, "scripts", "luna-stop-hook.cjs"),
   join(skill, "assets", "luna_worker.toml"),
   join(skill, "assets", "AGENTS.md.snippet"),
+  join(skill, "assets", "config.toml.snippet"),
 ]) {
   requireFile(path);
 }
@@ -47,6 +49,10 @@ for (const expected of [
   "at least three plausible hypotheses",
   "source census",
   "not a ceiling",
+  "one-second start interval",
+  "luna_lane.finished",
+  "exact `.nvmrc`",
+  "--max-active",
 ]) {
   if (!text.includes(expected)) throw new Error(`SKILL.md is missing lane-quality rule: ${expected}`);
 }

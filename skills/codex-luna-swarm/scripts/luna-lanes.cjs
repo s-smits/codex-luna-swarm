@@ -22,13 +22,14 @@ const {
   writeFileSync,
 } = require("node:fs");
 const { tmpdir } = require("node:os");
-const { basename, dirname, isAbsolute, join, resolve } = require("node:path");
+const { basename, delimiter, dirname, isAbsolute, join, resolve } = require("node:path");
 
 const MODEL = "gpt-5.6-luna";
 const REASONING = "max";
 const SERVICE_TIER = "priority";
 const NORMAL_MAX_LANES = 15;
 const STRESS_MAX_LANES = 50;
+const DEFAULT_STRESS_START_INTERVAL_MS = 1_000;
 const BUNDLED_CODEX = "/Applications/ChatGPT.app/Contents/Resources/codex";
 const HOMEBREW_CODEX = "/opt/homebrew/bin/codex";
 const LAUNCH_SCHEMA_VERSION = 1;
@@ -37,6 +38,7 @@ const MAX_PROMPT_CHARACTERS = 200_000;
 const MAX_INSTRUCTION_BYTES = MAX_PROMPT_CHARACTERS * 4;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_EVENT_PREFIX_BYTES = 1024 * 1024;
+const MAX_FAILURE_DIAGNOSTIC_BYTES = 64 * 1024;
 
 function usage() {
   return [
@@ -49,6 +51,8 @@ function usage() {
     "  --output-dir <absolute-new-directory>",
     "  --codex-bin <absolute-executable>",
     "  --task-template <text with optional {i} and {count}>",
+    "  --max-active <1-50>  Queue remaining tasks behind this active-lane cap",
+    "  --start-interval-ms <0-60000>  Minimum time between lane starts",
     "  --stress  Required when a direct launch contains 16-50 lanes",
     "  --ephemeral",
     "  --help",
@@ -78,6 +82,8 @@ function parseArgs(argv) {
         "--workdir",
         "--instructions-file",
         "--task-template",
+        "--max-active",
+        "--start-interval-ms",
       ].includes(arg)
     ) {
       const value = argv[index + 1];
@@ -168,8 +174,34 @@ function quickManifest(options) {
     workdir: options.workdir,
     instructionsFile: options.instructions_file,
     stress: options.stress,
+    maxActive: options.max_active,
+    startIntervalMs:
+      options.start_interval_ms ??
+      (options.tasks_file && count > NORMAL_MAX_LANES ? DEFAULT_STRESS_START_INTERVAL_MS : 0),
     lanes,
   };
+}
+
+function integerOption(value, field, minimum, maximum) {
+  if (value === undefined) return undefined;
+  const text = typeof value === "number" ? String(value) : value;
+  if (typeof text !== "string" || !/^\d+$/.test(text)) {
+    throw new Error(`${field} must be an integer from ${minimum} to ${maximum}`);
+  }
+  const number = Number(text);
+  if (number < minimum || number > maximum) {
+    throw new Error(`${field} must be an integer from ${minimum} to ${maximum}`);
+  }
+  return number;
+}
+
+function launchPolicy(raw, laneCount) {
+  if (Array.isArray(raw)) return { maxActive: laneCount, startIntervalMs: 0 };
+  const maxActive = integerOption(raw?.maxActive, "maxActive", 1, laneCount) ?? laneCount;
+  const defaultInterval = raw?.stress === true && laneCount > NORMAL_MAX_LANES ? DEFAULT_STRESS_START_INTERVAL_MS : 0;
+  const startIntervalMs =
+    integerOption(raw?.startIntervalMs, "startIntervalMs", 0, 60_000) ?? defaultInterval;
+  return { maxActive, startIntervalMs };
 }
 
 function absoluteExistingDirectory(value, field) {
@@ -294,6 +326,55 @@ function createOutputDirectory(explicit) {
   return output;
 }
 
+function exactNodeRequirement(workdir) {
+  const path = join(workdir, ".nvmrc");
+  if (!regularFileExists(path)) return null;
+  const value = readFileSync(path, "utf8").trim();
+  const match = value.match(/^v?(\d+\.\d+\.\d+)$/);
+  return match ? { path, version: `v${match[1]}` } : null;
+}
+
+function validateLauncherRuntime(lanes) {
+  for (const lane of lanes) {
+    const requirement = exactNodeRequirement(lane.workdir);
+    if (requirement && requirement.version !== process.version) {
+      throw new Error(
+        `${requirement.path} requires Node ${requirement.version}, but the Luna launcher runs ${process.version}; ` +
+          "invoke the launcher with the required Node binary before starting lanes",
+      );
+    }
+  }
+}
+
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\\\\''")}'`;
+}
+
+function createLaneEnvironment(outputDir) {
+  const executable = realpathSync(process.execPath);
+  const nodeDirectory = dirname(executable);
+  const shellDirectory = join(outputDir, "shell-env");
+  mkdirSync(shellDirectory, { mode: 0o700 });
+  const path = [nodeDirectory, process.env.PATH].filter(Boolean).join(delimiter);
+  const pathLine = `export PATH=${shellQuote(nodeDirectory)}:\${PATH}\n`;
+  for (const name of [".zshenv", ".zprofile", ".zshrc"]) {
+    writeFileSync(join(shellDirectory, name), pathLine, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  }
+  return {
+    env: { ...process.env, PATH: path, ZDOTDIR: shellDirectory, CODEX_LUNA_LANE: "1" },
+    record: {
+      nodeVersion: process.version,
+      nodeExecutable: executable,
+      userShellStartup: "isolated",
+    },
+  };
+}
+
+function wait(milliseconds) {
+  if (milliseconds <= 0) return Promise.resolve();
+  return new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
+}
+
 function lanePrompt(lane) {
   if (lane.sandbox === "read-only") {
     return `${lane.prompt}\n\nAuthority: read-only. Do not edit files or change external state.`;
@@ -335,6 +416,51 @@ function atomicJson(path, value, replace = false) {
   }
 }
 
+function launchRegistryPath() {
+  const threadId = process.env.CODEX_THREAD_ID;
+  if (typeof threadId !== "string" || !/^[a-zA-Z0-9_-]{8,128}$/.test(threadId)) return null;
+  const directory = join(tmpdir(), "codex-luna-swarm");
+  if (existsSync(directory) && !lstatSync(directory).isDirectory()) {
+    throw new Error(`Luna registry path is not a directory: ${directory}`);
+  }
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  return join(realpathSync(directory), `${threadId}.json`);
+}
+
+function registerParentLaunch(launch) {
+  const path = launchRegistryPath();
+  if (!path) return null;
+  if (regularFileExists(path)) {
+    const previous = readJson(path, "Luna launch registry");
+    if (previous?.status === "active" && processIsAlive(previous?.pid)) {
+      throw new Error(`another Luna launcher is already active for this Codex task: ${previous.outputDir}`);
+    }
+  }
+  atomicJson(
+    path,
+    {
+      schemaVersion: 1,
+      threadId: process.env.CODEX_THREAD_ID,
+      pid: process.pid,
+      status: "active",
+      outputDir: launch.outputDir,
+      laneCount: launch.lanes.length,
+      settledCount: 0,
+      failedCount: 0,
+      startedAt: launch.startedAt,
+      updatedAt: new Date().toISOString(),
+    },
+    true,
+  );
+  return path;
+}
+
+function updateParentLaunch(path, update) {
+  if (!path || !regularFileExists(path)) return;
+  const current = readJson(path, "Luna launch registry");
+  atomicJson(path, { ...current, ...update, updatedAt: new Date().toISOString() }, true);
+}
+
 function regularFileExists(path) {
   return existsSync(path) && lstatSync(path).isFile();
 }
@@ -365,6 +491,26 @@ function threadIdFromEvents(path) {
   return null;
 }
 
+function failureKind(stderrPath, eventPath) {
+  const diagnostic = [stderrPath, eventPath]
+    .filter(regularFileExists)
+    .map((path) => {
+      const size = statSync(path).size;
+      const length = Math.min(size, MAX_FAILURE_DIAGNOSTIC_BYTES);
+      if (length === 0) return "";
+      const buffer = Buffer.alloc(length);
+      const fd = openSync(path, "r");
+      try {
+        readSync(fd, buffer, 0, length, size - length);
+      } finally {
+        closeSync(fd);
+      }
+      return buffer.toString("utf8");
+    })
+    .join("\n");
+  return /(?:\b429\b|too many requests|rate.?limit)/i.test(diagnostic) ? "rate-limit" : null;
+}
+
 async function runLane(lane, options) {
   const { eventPath, stderrPath, reportPath } = laneArtifacts(options.outputDir, lane.name);
   const eventFd = openSync(eventPath, "wx", 0o600);
@@ -392,7 +538,7 @@ async function runLane(lane, options) {
   try {
     child = spawn(options.codexBin, args, {
       cwd: lane.workdir,
-      env: process.env,
+      env: options.env,
       shell: false,
       stdio: ["pipe", eventFd, stderrFd],
     });
@@ -405,6 +551,7 @@ async function runLane(lane, options) {
       exitCode: null,
       signal: null,
       error: String(error),
+      failureKind: "spawn",
       threadId: threadIdFromEvents(eventPath),
       durationMs: Date.now() - startedAt,
       startedAt: startedAtIso,
@@ -431,6 +578,7 @@ async function runLane(lane, options) {
   });
   const reportExists = regularFileExists(reportPath);
   const completed = completion.exitCode === 0 && reportExists;
+  const classifiedFailure = completed ? null : failureKind(stderrPath, eventPath);
   return {
     name: lane.name,
     status: completed ? "completed" : "failed",
@@ -438,7 +586,9 @@ async function runLane(lane, options) {
     signal: completion.signal,
     error:
       completion.error ??
+      (classifiedFailure === "rate-limit" ? "Codex lane was rate limited" : null) ??
       (completion.exitCode === 0 && !reportExists ? "Codex exited successfully without writing a report" : null),
+    failureKind: classifiedFailure,
     threadId: threadIdFromEvents(eventPath),
     durationMs: Date.now() - startedAt,
     startedAt: startedAtIso,
@@ -447,6 +597,27 @@ async function runLane(lane, options) {
     eventPath,
     stderrPath,
   };
+}
+
+async function runLaneQueue(lanes, policy, run) {
+  const results = Array(lanes.length);
+  const active = new Set();
+  let previousStart = 0;
+  for (let index = 0; index < lanes.length; index += 1) {
+    while (active.size >= policy.maxActive) await Promise.race(active);
+    const remainingDelay = previousStart + policy.startIntervalMs - Date.now();
+    await wait(remainingDelay);
+    previousStart = Date.now();
+    let pending;
+    pending = run(lanes[index], index)
+      .then((result) => {
+        results[index] = result;
+      })
+      .finally(() => active.delete(pending));
+    active.add(pending);
+  }
+  await Promise.all(active);
+  return results;
 }
 
 function reportSection(result) {
@@ -461,6 +632,7 @@ function reportSection(result) {
     `Duration: ${result.durationMs} ms`,
     `JSONL: ${result.eventPath}`,
     `Stderr: ${result.stderrPath}`,
+    result.failureKind ? `Failure kind: ${result.failureKind}` : null,
     result.error ? `Error: ${result.error}` : null,
     "",
     report,
@@ -479,9 +651,12 @@ function writeCollectedReports(outputDir, results) {
 
 async function runLunaLanes(rawManifest, options = {}) {
   const lanes = normalizeManifest(rawManifest);
+  validateLauncherRuntime(lanes);
+  const policy = launchPolicy(rawManifest, lanes.length);
   const stress = !Array.isArray(rawManifest) && rawManifest?.stress === true;
   const outputDir = createOutputDirectory(options.outputDir);
   const codexBin = resolveCodexBinary(options.codexBin);
+  const laneEnvironment = createLaneEnvironment(outputDir);
   const startedAt = new Date().toISOString();
   const launch = {
     schemaVersion: LAUNCH_SCHEMA_VERSION,
@@ -489,6 +664,9 @@ async function runLunaLanes(rawManifest, options = {}) {
     model: MODEL,
     reasoningEffort: REASONING,
     serviceTier: SERVICE_TIER,
+    runtime: laneEnvironment.record,
+    maxActive: policy.maxActive,
+    startIntervalMs: policy.startIntervalMs,
     stress,
     outputDir,
     startedAt,
@@ -502,12 +680,35 @@ async function runLunaLanes(rawManifest, options = {}) {
   };
   atomicJson(join(outputDir, "launch.json"), launch);
   if (typeof options.onStart === "function") options.onStart(launch);
-  const results = await Promise.all(
-    lanes.map(async (lane) => {
-      const result = await runLane(lane, { codexBin, outputDir, ephemeral: options.ephemeral === true });
+  let settledCount = 0;
+  const results = await runLaneQueue(
+    lanes,
+    policy,
+    async (lane) => {
+      const result = await runLane(lane, {
+        codexBin,
+        outputDir,
+        env: laneEnvironment.env,
+        ephemeral: options.ephemeral === true,
+      });
       atomicJson(laneArtifacts(outputDir, lane.name).resultPath, result);
+      settledCount += 1;
+      if (typeof options.onLaneFinish === "function") {
+        options.onLaneFinish({
+          type: "luna_lane.finished",
+          name: result.name,
+          status: result.status,
+          exitCode: result.exitCode,
+          signal: result.signal,
+          threadId: result.threadId,
+          failureKind: result.failureKind,
+          settledCount,
+          laneCount: lanes.length,
+          remainingCount: lanes.length - settledCount,
+        });
+      }
       return result;
-    }),
+    },
   );
   const reportsPath = writeCollectedReports(outputDir, results);
   const summary = {
@@ -516,6 +717,9 @@ async function runLunaLanes(rawManifest, options = {}) {
     model: MODEL,
     reasoningEffort: REASONING,
     serviceTier: SERVICE_TIER,
+    runtime: laneEnvironment.record,
+    maxActive: policy.maxActive,
+    startIntervalMs: policy.startIntervalMs,
     stress,
     outputDir,
     startedAt,
@@ -708,7 +912,13 @@ async function main(argv) {
     throw new Error("choose exactly one of --manifest, a direct launch, or --drain");
   }
   if (options.drain) {
-    if (options.output_dir || options.codex_bin || options.ephemeral) {
+    if (
+      options.output_dir ||
+      options.codex_bin ||
+      options.ephemeral ||
+      options.max_active ||
+      options.start_interval_ms
+    ) {
       throw new Error("--drain does not accept launch options");
     }
     await drainReports(options.drain, writeStdout);
@@ -722,27 +932,77 @@ async function main(argv) {
       throw new Error(`--manifest exceeds ${MAX_MANIFEST_BYTES} bytes`);
     }
     manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    if (options.max_active !== undefined || options.start_interval_ms !== undefined) {
+      manifest = Array.isArray(manifest) ? { lanes: manifest } : { ...manifest };
+      if (options.max_active !== undefined) manifest.maxActive = options.max_active;
+      if (options.start_interval_ms !== undefined) manifest.startIntervalMs = options.start_interval_ms;
+    }
   } else {
     manifest = quickManifest(options);
   }
-  const summary = await runLunaLanes(manifest, {
-    outputDir: options.output_dir,
-    codexBin: options.codex_bin,
-    ephemeral: options.ephemeral,
-    onStart: (launch) => {
-      process.stdout.write(
-        `${JSON.stringify({
-          type: "luna_lanes.started",
-          outputDir: launch.outputDir,
-          laneCount: launch.lanes.length,
-          model: launch.model,
-          reasoningEffort: launch.reasoningEffort,
-          serviceTier: launch.serviceTier,
-        })}\n`,
-      );
-    },
+  let registryPath = null;
+  let failedCount = 0;
+  let summary;
+  try {
+    summary = await runLunaLanes(manifest, {
+      outputDir: options.output_dir,
+      codexBin: options.codex_bin,
+      ephemeral: options.ephemeral,
+      onStart: (launch) => {
+        registryPath = registerParentLaunch(launch);
+        process.stdout.write(
+          `${JSON.stringify({
+            type: "luna_lanes.started",
+            outputDir: launch.outputDir,
+            laneCount: launch.lanes.length,
+            model: launch.model,
+            reasoningEffort: launch.reasoningEffort,
+            serviceTier: launch.serviceTier,
+            runtime: launch.runtime,
+            maxActive: launch.maxActive,
+            startIntervalMs: launch.startIntervalMs,
+            registryPath,
+          })}\n`,
+        );
+      },
+      onLaneFinish: (event) => {
+        if (event.status !== "completed") failedCount += 1;
+        updateParentLaunch(registryPath, {
+          settledCount: event.settledCount,
+          failedCount,
+          lastLane: event.name,
+          lastLaneStatus: event.status,
+        });
+        process.stdout.write(`${JSON.stringify(event)}\n`);
+      },
+    });
+  } catch (error) {
+    updateParentLaunch(registryPath, {
+      status: "crashed",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+  updateParentLaunch(registryPath, {
+    status: "terminal",
+    settledCount: summary.lanes.length,
+    failedCount: summary.lanes.filter((lane) => lane.status !== "completed").length,
+    finishedAt: summary.finishedAt,
   });
-  process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+  const completedCount = summary.lanes.filter((lane) => lane.status === "completed").length;
+  const rateLimitedCount = summary.lanes.filter((lane) => lane.failureKind === "rate-limit").length;
+  process.stdout.write(
+    `${JSON.stringify({
+      type: "luna_lanes.completed",
+      outputDir: summary.outputDir,
+      summaryPath: join(summary.outputDir, "summary.json"),
+      reportsPath: summary.reportsPath,
+      laneCount: summary.lanes.length,
+      completedCount,
+      failedCount: summary.lanes.length - completedCount,
+      rateLimitedCount,
+    })}\n`,
+  );
   return summary.lanes.every((lane) => lane.status === "completed") ? 0 : 1;
 }
 
@@ -757,4 +1017,12 @@ if (require.main === module) {
     });
 }
 
-module.exports = { drainReports, normalizeManifest, parseArgs, quickManifest, runLunaLanes };
+module.exports = {
+  drainReports,
+  launchPolicy,
+  normalizeManifest,
+  parseArgs,
+  quickManifest,
+  runLunaLanes,
+  validateLauncherRuntime,
+};

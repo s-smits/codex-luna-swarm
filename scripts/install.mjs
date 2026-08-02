@@ -21,6 +21,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const START_MARKER = "<!-- codex-luna-swarm:start -->";
 const END_MARKER = "<!-- codex-luna-swarm:end -->";
+const CONFIG_START_MARKER = "# codex-luna-swarm:start";
+const CONFIG_END_MARKER = "# codex-luna-swarm:end";
 
 function usage() {
   return [
@@ -84,6 +86,7 @@ function sourcePaths() {
     skill,
     agent: join(skill, "assets", "luna_worker.toml"),
     snippet: join(skill, "assets", "AGENTS.md.snippet"),
+    configSnippet: join(skill, "assets", "config.toml.snippet"),
   };
 }
 
@@ -92,6 +95,7 @@ function destinationPaths(target) {
     skill: join(target, ".agents", "skills", "codex-luna-swarm"),
     agent: join(target, ".codex", "agents", "luna_worker.toml"),
     agents: join(target, "AGENTS.md"),
+    config: join(target, ".codex", "config.toml"),
   };
 }
 
@@ -132,32 +136,34 @@ function sameFile(left, right) {
   );
 }
 
-function markerRange(text) {
-  const start = text.indexOf(START_MARKER);
-  const end = text.indexOf(END_MARKER);
-  if ((start === -1) !== (end === -1)) throw new Error("AGENTS.md contains an incomplete Codex Luna Swarm block");
+function markerRange(text, startMarker = START_MARKER, endMarker = END_MARKER, label = "AGENTS.md") {
+  const start = text.indexOf(startMarker);
+  const end = text.indexOf(endMarker);
+  if ((start === -1) !== (end === -1)) {
+    throw new Error(`${label} contains an incomplete Codex Luna Swarm block`);
+  }
   if (start === -1) return null;
-  if (text.indexOf(START_MARKER, start + START_MARKER.length) !== -1) {
-    throw new Error("AGENTS.md contains more than one Codex Luna Swarm block");
+  if (text.indexOf(startMarker, start + startMarker.length) !== -1) {
+    throw new Error(`${label} contains more than one Codex Luna Swarm block`);
   }
-  if (text.indexOf(END_MARKER, end + END_MARKER.length) !== -1) {
-    throw new Error("AGENTS.md contains more than one Codex Luna Swarm block");
+  if (text.indexOf(endMarker, end + endMarker.length) !== -1) {
+    throw new Error(`${label} contains more than one Codex Luna Swarm block`);
   }
-  if (end < start) throw new Error("AGENTS.md has reversed Codex Luna Swarm markers");
-  return { start, end: end + END_MARKER.length };
+  if (end < start) throw new Error(`${label} has reversed Codex Luna Swarm markers`);
+  return { start, end: end + endMarker.length };
 }
 
-export function installBlock(existing, snippet) {
+export function installBlock(existing, snippet, markers = {}) {
   const normalized = snippet.trim();
-  const range = markerRange(existing);
+  const range = markerRange(existing, markers.start, markers.end, markers.label);
   if (!range) return `${existing.trimEnd()}${existing.trim() ? "\n\n" : ""}${normalized}\n`;
   const before = existing.slice(0, range.start).trimEnd();
   const after = existing.slice(range.end).trimStart();
   return `${[before, normalized, after].filter(Boolean).join("\n\n")}\n`;
 }
 
-export function removeBlock(existing) {
-  const range = markerRange(existing);
+export function removeBlock(existing, markers = {}) {
+  const range = markerRange(existing, markers.start, markers.end, markers.label);
   if (!range) return existing;
   const before = existing.slice(0, range.start).trimEnd();
   const after = existing.slice(range.end).trimStart();
@@ -200,9 +206,9 @@ function replaceDirectory(source, destination) {
   }
 }
 
-function readAgents(path) {
+function readManagedText(path, label) {
   if (!existsSync(path)) return "";
-  if (!lstatSync(path).isFile()) throw new Error(`AGENTS.md is not a regular file: ${path}`);
+  if (!lstatSync(path).isFile()) throw new Error(`${label} is not a regular file: ${path}`);
   return readFileSync(path, "utf8");
 }
 
@@ -215,15 +221,21 @@ export function runInstaller(rawOptions) {
   const source = sourcePaths();
   const destination = destinationPaths(target);
   const snippet = readFileSync(source.snippet, "utf8").trim();
-  const agentsBefore = readAgents(destination.agents);
+  const configSnippet = readFileSync(source.configSnippet, "utf8").trim();
+  const configMarkers = { start: CONFIG_START_MARKER, end: CONFIG_END_MARKER, label: ".codex/config.toml" };
+  const agentsBefore = readManagedText(destination.agents, "AGENTS.md");
+  const configBefore = readManagedText(destination.config, ".codex/config.toml");
   const agentsRange = markerRange(agentsBefore);
+  const configRange = markerRange(configBefore, CONFIG_START_MARKER, CONFIG_END_MARKER, ".codex/config.toml");
   const installedBlock = agentsRange ? agentsBefore.slice(agentsRange.start, agentsRange.end).trim() : null;
+  const installedConfigBlock = configRange ? configBefore.slice(configRange.start, configRange.end).trim() : null;
 
   if (rawOptions.mode === "check") {
     const checks = {
       skill: equalTrees(source.skill, destination.skill),
       agent: sameFile(source.agent, destination.agent),
       agentsBlock: installedBlock === snippet,
+      configBlock: installedConfigBlock === configSnippet,
     };
     if (!Object.values(checks).every(Boolean)) {
       throw new Error(`installation check failed: ${JSON.stringify(checks)}`);
@@ -234,15 +246,19 @@ export function runInstaller(rawOptions) {
   const skillChanged = existsSync(destination.skill) && !equalTrees(source.skill, destination.skill);
   const agentChanged = existsSync(destination.agent) && !sameFile(source.agent, destination.agent);
   const agentsChanged = installedBlock !== null && installedBlock !== snippet;
+  const configChanged = installedConfigBlock !== null && installedConfigBlock !== configSnippet;
   preflightConflict(skillChanged, `managed skill differs at ${destination.skill}`, rawOptions.force);
   preflightConflict(agentChanged, `custom agent differs at ${destination.agent}`, rawOptions.force);
   preflightConflict(agentsChanged, `managed AGENTS.md block differs at ${destination.agents}`, rawOptions.force);
+  preflightConflict(configChanged, `managed hook block differs at ${destination.config}`, rawOptions.force);
 
   if (rawOptions.mode === "remove") {
     if (existsSync(destination.skill)) rmSync(destination.skill, { recursive: true, force: false });
     if (existsSync(destination.agent)) unlinkSync(destination.agent);
     const agentsAfter = removeBlock(agentsBefore);
     if (agentsAfter !== agentsBefore) atomicWrite(destination.agents, agentsAfter);
+    const configAfter = removeBlock(configBefore, configMarkers);
+    if (configAfter !== configBefore) atomicWrite(destination.config, configAfter);
     return {
       status: "removed",
       mode: "remove",
@@ -257,6 +273,8 @@ export function runInstaller(rawOptions) {
   }
   const agentsAfter = installBlock(agentsBefore, snippet);
   if (agentsAfter !== agentsBefore) atomicWrite(destination.agents, agentsAfter);
+  const configAfter = installBlock(configBefore, configSnippet, configMarkers);
+  if (configAfter !== configBefore) atomicWrite(destination.config, configAfter);
   return {
     status: "installed",
     mode: "install",

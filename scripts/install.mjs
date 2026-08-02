@@ -79,10 +79,8 @@ function resolveGitRoot(target) {
 }
 
 function sourcePaths() {
-  const repository = realpathSync(join(dirname(fileURLToPath(import.meta.url)), ".."));
-  const skill = join(repository, "skills", "codex-luna-swarm");
+  const skill = realpathSync(join(dirname(fileURLToPath(import.meta.url)), "..", "skills", "codex-luna-swarm"));
   return {
-    repository,
     skill,
     agent: join(skill, "assets", "luna_worker.toml"),
     snippet: join(skill, "assets", "AGENTS.md.snippet"),
@@ -121,41 +119,31 @@ function filesUnder(root) {
 }
 
 function equalTrees(left, right) {
-  const first = filesUnder(left);
-  const second = filesUnder(right);
+  const [first, second] = [filesUnder(left), filesUnder(right)];
   return first !== null && second !== null && JSON.stringify(first) === JSON.stringify(second);
 }
 
 function sameFile(left, right) {
-  return (
-    existsSync(left) &&
-    existsSync(right) &&
-    lstatSync(left).isFile() &&
-    lstatSync(right).isFile() &&
-    sha256(left) === sha256(right)
-  );
+  return [left, right].every((path) => existsSync(path) && lstatSync(path).isFile()) && sha256(left) === sha256(right);
 }
 
-function markerRange(text, startMarker = START_MARKER, endMarker = END_MARKER, label = "AGENTS.md") {
-  const start = text.indexOf(startMarker);
-  const end = text.indexOf(endMarker);
-  if ((start === -1) !== (end === -1)) {
+function markerRange(text, { start = START_MARKER, end = END_MARKER, label = "AGENTS.md" } = {}) {
+  const first = text.indexOf(start);
+  const last = text.indexOf(end);
+  if (first === -1 && last === -1) return null;
+  if (first === -1 || last === -1) {
     throw new Error(`${label} contains an incomplete Codex Luna Swarm block`);
   }
-  if (start === -1) return null;
-  if (text.indexOf(startMarker, start + startMarker.length) !== -1) {
+  if (text.indexOf(start, first + start.length) !== -1 || text.indexOf(end, last + end.length) !== -1) {
     throw new Error(`${label} contains more than one Codex Luna Swarm block`);
   }
-  if (text.indexOf(endMarker, end + endMarker.length) !== -1) {
-    throw new Error(`${label} contains more than one Codex Luna Swarm block`);
-  }
-  if (end < start) throw new Error(`${label} has reversed Codex Luna Swarm markers`);
-  return { start, end: end + endMarker.length };
+  if (last < first) throw new Error(`${label} has reversed Codex Luna Swarm markers`);
+  return { start: first, end: last + end.length };
 }
 
 export function installBlock(existing, snippet, markers = {}) {
   const normalized = snippet.trim();
-  const range = markerRange(existing, markers.start, markers.end, markers.label);
+  const range = markerRange(existing, markers);
   if (!range) return `${existing.trimEnd()}${existing.trim() ? "\n\n" : ""}${normalized}\n`;
   const before = existing.slice(0, range.start).trimEnd();
   const after = existing.slice(range.end).trimStart();
@@ -163,7 +151,7 @@ export function installBlock(existing, snippet, markers = {}) {
 }
 
 export function removeBlock(existing, markers = {}) {
-  const range = markerRange(existing, markers.start, markers.end, markers.label);
+  const range = markerRange(existing, markers);
   if (!range) return existing;
   const before = existing.slice(0, range.start).trimEnd();
   const after = existing.slice(range.end).trimStart();
@@ -226,7 +214,7 @@ export function runInstaller(rawOptions) {
   const agentsBefore = readManagedText(destination.agents, "AGENTS.md");
   const configBefore = readManagedText(destination.config, ".codex/config.toml");
   const agentsRange = markerRange(agentsBefore);
-  const configRange = markerRange(configBefore, CONFIG_START_MARKER, CONFIG_END_MARKER, ".codex/config.toml");
+  const configRange = markerRange(configBefore, configMarkers);
   const installedBlock = agentsRange ? agentsBefore.slice(agentsRange.start, agentsRange.end).trim() : null;
   const installedConfigBlock = configRange ? configBefore.slice(configRange.start, configRange.end).trim() : null;
 

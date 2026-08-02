@@ -39,7 +39,7 @@ test("installs, checks, updates, and removes only managed paths", () => {
   const firstConfig = readFileSync(configPath, "utf8");
   assert.match(firstConfig, /\[features\]/);
   assert.match(firstConfig, /\[\[hooks\.Stop\]\]/);
-  assert.match(firstConfig, /luna-stop-hook\.cjs/);
+  assert.match(firstConfig, /luna-lanes\.cjs.*--stop-hook/);
 
   assert.equal(runInstaller({ target: root, mode: "check", force: false }).status, "ok");
   runInstaller({ target: root, mode: "install", force: false });

@@ -80,29 +80,21 @@ node /path/to/codex-luna-swarm/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
 the main agent's distinct task descriptions. Before launch, the main agent should reject any row
 that could be completed by answering one narrow question or inspecting one file.
 
-`--max-active` is optional. It keeps the complete task set in one launch and queues excess work
-behind the chosen active-lane cap. Stress task files start lanes one second apart by default to
-avoid an instantaneous service burst; `--start-interval-ms` may set a different explicit interval.
-If a run receives HTTP 429 or another typed rate-limit non-result, lower the active cap or increase
-the start interval and retry only the missing work.
+`--max-active` queues excess work in one launch. Stress task files start one second apart;
+`--start-interval-ms` overrides that pace. A typed HTTP 429 result means reducing the cap or pace
+and retrying only missing work after the launcher settles.
 
-The launch process prints one compact `luna_lane.finished` JSON event as soon as a lane completes,
-fails, or cannot spawn. Full report text remains behind `--drain`, so completion signals do not fill
-the main context. At terminal the launcher prints one compact `luna_lanes.completed` event with
-completed, failed, and rate-limited counts plus the archive paths. The installed Codex `Stop` hook
-keeps the parent turn active while its registered launcher is alive. When the launcher finishes or
-crashes, the hook creates one continuation prompt that directs the main agent to drain and settle
-the run. The hook ignores Luna lane sessions themselves and other Codex task IDs.
+Each lane prints one compact `luna_lane.finished` event; full reports remain behind `--drain`.
+`luna_lanes.completed` gives terminal counts. The installed `Stop` hook keeps the parent task active
+while its launcher runs and wakes it once after terminal or crash. Child lanes and other tasks are
+excluded.
 
 The launcher needs access to the active Codex state directory because it starts nested Codex CLI
 processes. If the main shell tool is sandboxed, grant the launcher command that access once; the
 individual lane sandboxes remain read-only.
 
-The launcher records its Node executable and isolates user zsh startup files for every lane while
-preserving the verified parent environment. When a worktree has an exact `.nvmrc`, the launcher
-refuses before spawning any lane unless its own Node version matches. Invoke the launcher in the
-same shell command that selects the repository's Node version; a version-manager change made in an
-earlier shell-tool call does not persist automatically.
+Select the repository's Node version in the launch command. An exact `.nvmrc` mismatch refuses
+before spawning; nested lanes use the verified executable through isolated zsh startup.
 
 The fallback's `--drain` command prints each newly finished report once. The main agent does not
 need to read or reproduce the launcher.

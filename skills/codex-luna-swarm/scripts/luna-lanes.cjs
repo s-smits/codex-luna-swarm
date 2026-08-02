@@ -38,7 +38,6 @@ const MAX_PROMPT_CHARACTERS = 200_000;
 const MAX_INSTRUCTION_BYTES = MAX_PROMPT_CHARACTERS * 4;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_EVENT_PREFIX_BYTES = 1024 * 1024;
-const MAX_FAILURE_DIAGNOSTIC_BYTES = 64 * 1024;
 
 function usage() {
   return [
@@ -63,12 +62,10 @@ function parseArgs(argv) {
   const parsed = { ephemeral: false, stress: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--ephemeral") {
-      if (parsed.ephemeral) throw new Error("Duplicate argument: --ephemeral");
-      parsed.ephemeral = true;
-    } else if (arg === "--stress") {
-      if (parsed.stress) throw new Error("Duplicate argument: --stress");
-      parsed.stress = true;
+    if (["--ephemeral", "--stress", "--stop-hook"].includes(arg)) {
+      const key = arg.slice(2).replaceAll("-", "_");
+      if (parsed[key]) throw new Error(`Duplicate argument: ${arg}`);
+      parsed[key] = true;
     } else if (arg === "--help") {
       parsed.help = true;
     } else if (
@@ -182,25 +179,19 @@ function quickManifest(options) {
   };
 }
 
-function integerOption(value, field, minimum, maximum) {
-  if (value === undefined) return undefined;
-  const text = typeof value === "number" ? String(value) : value;
-  if (typeof text !== "string" || !/^\d+$/.test(text)) {
-    throw new Error(`${field} must be an integer from ${minimum} to ${maximum}`);
-  }
-  const number = Number(text);
-  if (number < minimum || number > maximum) {
-    throw new Error(`${field} must be an integer from ${minimum} to ${maximum}`);
-  }
-  return number;
-}
-
 function launchPolicy(raw, laneCount) {
   if (Array.isArray(raw)) return { maxActive: laneCount, startIntervalMs: 0 };
-  const maxActive = integerOption(raw?.maxActive, "maxActive", 1, laneCount) ?? laneCount;
-  const defaultInterval = raw?.stress === true && laneCount > NORMAL_MAX_LANES ? DEFAULT_STRESS_START_INTERVAL_MS : 0;
-  const startIntervalMs =
-    integerOption(raw?.startIntervalMs, "startIntervalMs", 0, 60_000) ?? defaultInterval;
+  const maxActive = Number(raw?.maxActive ?? laneCount);
+  const startIntervalMs = Number(
+    raw?.startIntervalMs ??
+      (raw?.stress === true && laneCount > NORMAL_MAX_LANES ? DEFAULT_STRESS_START_INTERVAL_MS : 0),
+  );
+  if (!Number.isInteger(maxActive) || maxActive < 1 || maxActive > laneCount) {
+    throw new Error(`maxActive must be an integer from 1 to ${laneCount}`);
+  }
+  if (!Number.isInteger(startIntervalMs) || startIntervalMs < 0 || startIntervalMs > 60_000) {
+    throw new Error("startIntervalMs must be an integer from 0 to 60000");
+  }
   return { maxActive, startIntervalMs };
 }
 
@@ -218,15 +209,9 @@ function absoluteExistingFile(value, field) {
   return actual;
 }
 
-function optionalText(value, field) {
-  if (value === undefined) return "";
-  if (typeof value !== "string") throw new Error(`${field} must be a string`);
-  return value.trim();
-}
-
 function sharedInstructions(raw) {
   if (Array.isArray(raw) || !raw || typeof raw !== "object") return "";
-  const inline = optionalText(raw.instructions, "instructions");
+  if (raw.instructions !== undefined && typeof raw.instructions !== "string") throw new Error("instructions must be a string");
   let fromFile = "";
   if (raw.instructionsFile !== undefined) {
     if (typeof raw.instructionsFile !== "string") {
@@ -238,7 +223,7 @@ function sharedInstructions(raw) {
     }
     fromFile = readFileSync(path, "utf8").trim();
   }
-  return [fromFile, inline].filter(Boolean).join("\n\n");
+  return [fromFile, raw.instructions?.trim()].filter(Boolean).join("\n\n");
 }
 
 function normalizeManifest(raw) {
@@ -326,28 +311,17 @@ function createOutputDirectory(explicit) {
   return output;
 }
 
-function exactNodeRequirement(workdir) {
-  const path = join(workdir, ".nvmrc");
-  if (!regularFileExists(path)) return null;
-  const value = readFileSync(path, "utf8").trim();
-  const match = value.match(/^v?(\d+\.\d+\.\d+)$/);
-  return match ? { path, version: `v${match[1]}` } : null;
-}
-
 function validateLauncherRuntime(lanes) {
   for (const lane of lanes) {
-    const requirement = exactNodeRequirement(lane.workdir);
-    if (requirement && requirement.version !== process.version) {
+    const path = join(lane.workdir, ".nvmrc");
+    const match = regularFileExists(path) && readFileSync(path, "utf8").trim().match(/^v?(\d+\.\d+\.\d+)$/);
+    if (match && `v${match[1]}` !== process.version) {
       throw new Error(
-        `${requirement.path} requires Node ${requirement.version}, but the Luna launcher runs ${process.version}; ` +
+        `${path} requires Node v${match[1]}, but the Luna launcher runs ${process.version}; ` +
           "invoke the launcher with the required Node binary before starting lanes",
       );
     }
   }
-}
-
-function shellQuote(value) {
-  return `'${value.replaceAll("'", "'\\\\''")}'`;
 }
 
 function createLaneEnvironment(outputDir) {
@@ -355,24 +329,22 @@ function createLaneEnvironment(outputDir) {
   const nodeDirectory = dirname(executable);
   const shellDirectory = join(outputDir, "shell-env");
   mkdirSync(shellDirectory, { mode: 0o700 });
-  const path = [nodeDirectory, process.env.PATH].filter(Boolean).join(delimiter);
-  const pathLine = `export PATH=${shellQuote(nodeDirectory)}:\${PATH}\n`;
-  for (const name of [".zshenv", ".zprofile", ".zshrc"]) {
-    writeFileSync(join(shellDirectory, name), pathLine, { encoding: "utf8", flag: "wx", mode: 0o600 });
-  }
+  writeFileSync(join(shellDirectory, ".zshenv"), 'export PATH="$CODEX_LUNA_NODE_DIR:$PATH"\n', {
+    mode: 0o600,
+  });
   return {
-    env: { ...process.env, PATH: path, ZDOTDIR: shellDirectory, CODEX_LUNA_LANE: "1" },
+    env: {
+      ...process.env,
+      PATH: [nodeDirectory, process.env.PATH].filter(Boolean).join(delimiter),
+      ZDOTDIR: shellDirectory,
+      CODEX_LUNA_NODE_DIR: nodeDirectory,
+      CODEX_LUNA_LANE: "1",
+    },
     record: {
       nodeVersion: process.version,
       nodeExecutable: executable,
-      userShellStartup: "isolated",
     },
   };
-}
-
-function wait(milliseconds) {
-  if (milliseconds <= 0) return Promise.resolve();
-  return new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
 }
 
 function lanePrompt(lane) {
@@ -416,15 +388,11 @@ function atomicJson(path, value, replace = false) {
   }
 }
 
-function launchRegistryPath() {
-  const threadId = process.env.CODEX_THREAD_ID;
+function launchRegistryPath(threadId = process.env.CODEX_THREAD_ID) {
   if (typeof threadId !== "string" || !/^[a-zA-Z0-9_-]{8,128}$/.test(threadId)) return null;
   const directory = join(tmpdir(), "codex-luna-swarm");
-  if (existsSync(directory) && !lstatSync(directory).isDirectory()) {
-    throw new Error(`Luna registry path is not a directory: ${directory}`);
-  }
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  return join(realpathSync(directory), `${threadId}.json`);
+  return join(directory, `${threadId}.json`);
 }
 
 function registerParentLaunch(launch) {
@@ -432,33 +400,16 @@ function registerParentLaunch(launch) {
   if (!path) return null;
   if (regularFileExists(path)) {
     const previous = readJson(path, "Luna launch registry");
-    if (previous?.status === "active" && processIsAlive(previous?.pid)) {
+    if (processIsAlive(previous?.pid)) {
       throw new Error(`another Luna launcher is already active for this Codex task: ${previous.outputDir}`);
     }
   }
-  atomicJson(
-    path,
-    {
-      schemaVersion: 1,
-      threadId: process.env.CODEX_THREAD_ID,
-      pid: process.pid,
-      status: "active",
-      outputDir: launch.outputDir,
-      laneCount: launch.lanes.length,
-      settledCount: 0,
-      failedCount: 0,
-      startedAt: launch.startedAt,
-      updatedAt: new Date().toISOString(),
-    },
-    true,
-  );
+  atomicJson(path, {
+    threadId: process.env.CODEX_THREAD_ID,
+    pid: process.pid,
+    outputDir: launch.outputDir,
+  }, true);
   return path;
-}
-
-function updateParentLaunch(path, update) {
-  if (!path || !regularFileExists(path)) return;
-  const current = readJson(path, "Luna launch registry");
-  atomicJson(path, { ...current, ...update, updatedAt: new Date().toISOString() }, true);
 }
 
 function regularFileExists(path) {
@@ -489,26 +440,6 @@ function threadIdFromEvents(path) {
     }
   }
   return null;
-}
-
-function failureKind(stderrPath, eventPath) {
-  const diagnostic = [stderrPath, eventPath]
-    .filter(regularFileExists)
-    .map((path) => {
-      const size = statSync(path).size;
-      const length = Math.min(size, MAX_FAILURE_DIAGNOSTIC_BYTES);
-      if (length === 0) return "";
-      const buffer = Buffer.alloc(length);
-      const fd = openSync(path, "r");
-      try {
-        readSync(fd, buffer, 0, length, size - length);
-      } finally {
-        closeSync(fd);
-      }
-      return buffer.toString("utf8");
-    })
-    .join("\n");
-  return /(?:\b429\b|too many requests|rate.?limit)/i.test(diagnostic) ? "rate-limit" : null;
 }
 
 async function runLane(lane, options) {
@@ -578,7 +509,9 @@ async function runLane(lane, options) {
   });
   const reportExists = regularFileExists(reportPath);
   const completed = completion.exitCode === 0 && reportExists;
-  const classifiedFailure = completed ? null : failureKind(stderrPath, eventPath);
+  const classifiedFailure = !completed && /(?:\b429\b|too many requests|rate.?limit)/i.test(
+    [stderrPath, eventPath].filter(regularFileExists).map((path) => readFileSync(path, "utf8")).join("\n"),
+  ) ? "rate-limit" : null;
   return {
     name: lane.name,
     status: completed ? "completed" : "failed",
@@ -606,7 +539,9 @@ async function runLaneQueue(lanes, policy, run) {
   for (let index = 0; index < lanes.length; index += 1) {
     while (active.size >= policy.maxActive) await Promise.race(active);
     const remainingDelay = previousStart + policy.startIntervalMs - Date.now();
-    await wait(remainingDelay);
+    if (remainingDelay > 0) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, remainingDelay));
+    }
     previousStart = Date.now();
     let pending;
     pending = run(lanes[index], index)
@@ -640,13 +575,6 @@ function reportSection(result) {
   ]
     .filter((line) => line !== null)
     .join("\n");
-}
-
-function writeCollectedReports(outputDir, results) {
-  const path = join(outputDir, "reports.md");
-  const text = ["# Luna lane reports", "", ...results.map(reportSection)].join("\n");
-  writeFileSync(path, `${text.trimEnd()}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
-  return path;
 }
 
 async function runLunaLanes(rawManifest, options = {}) {
@@ -698,19 +626,17 @@ async function runLunaLanes(rawManifest, options = {}) {
           type: "luna_lane.finished",
           name: result.name,
           status: result.status,
-          exitCode: result.exitCode,
-          signal: result.signal,
-          threadId: result.threadId,
           failureKind: result.failureKind,
           settledCount,
-          laneCount: lanes.length,
           remainingCount: lanes.length - settledCount,
         });
       }
       return result;
     },
   );
-  const reportsPath = writeCollectedReports(outputDir, results);
+  const reportsPath = join(outputDir, "reports.md");
+  const reports = ["# Luna lane reports", "", ...results.map(reportSection)].join("\n");
+  writeFileSync(reportsPath, `${reports.trimEnd()}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
   const summary = {
     schemaVersion: LAUNCH_SCHEMA_VERSION,
     type: "luna_lanes.completed",
@@ -779,6 +705,35 @@ function processIsAlive(pid) {
   } catch (error) {
     return error?.code !== "ESRCH";
   }
+}
+
+function stopHook() {
+  if (process.env.CODEX_LUNA_LANE === "1") return {};
+  const block = (reason) => ({ decision: "block", reason });
+  let input;
+  try {
+    input = JSON.parse(readFileSync(0, "utf8"));
+  } catch {
+    return {};
+  }
+  const path = launchRegistryPath(input?.session_id);
+  if (!path || !regularFileExists(path) || lstatSync(path).isSymbolicLink()) return {};
+  let record;
+  try {
+    record = readJson(path, "Luna launch registry");
+  } catch {
+    unlinkSync(path);
+    return block("The Luna launcher registry is unreadable. Inspect its terminal.");
+  }
+  if (record.threadId !== input.session_id || typeof record.outputDir !== "string") return {};
+  const terminal = regularFileExists(join(record.outputDir, "summary.json"));
+  if (!terminal && processIsAlive(record.pid)) {
+    return block(`The Luna launcher is active at ${record.outputDir}. Poll it, follow luna_lane.finished events, and drain reports before ending.`);
+  }
+  unlinkSync(path);
+  return block(terminal
+    ? `The Luna launcher finished at ${record.outputDir}. Drain and settle it.`
+    : `The Luna launcher stopped unexpectedly at ${record.outputDir}. Inspect its terminal and missing lanes.`);
 }
 
 function acquireDrainLock(outputDir) {
@@ -901,6 +856,10 @@ function writeStdout(value) {
 
 async function main(argv) {
   const options = parseArgs(argv);
+  if (options.stop_hook) {
+    process.stdout.write(`${JSON.stringify(stopHook())}\n`);
+    return 0;
+  }
   if (options.help) {
     process.stdout.write(`${usage()}\n`);
     return 0;
@@ -940,54 +899,27 @@ async function main(argv) {
   } else {
     manifest = quickManifest(options);
   }
-  let registryPath = null;
-  let failedCount = 0;
-  let summary;
-  try {
-    summary = await runLunaLanes(manifest, {
-      outputDir: options.output_dir,
-      codexBin: options.codex_bin,
-      ephemeral: options.ephemeral,
-      onStart: (launch) => {
-        registryPath = registerParentLaunch(launch);
-        process.stdout.write(
-          `${JSON.stringify({
-            type: "luna_lanes.started",
-            outputDir: launch.outputDir,
-            laneCount: launch.lanes.length,
-            model: launch.model,
-            reasoningEffort: launch.reasoningEffort,
-            serviceTier: launch.serviceTier,
-            runtime: launch.runtime,
-            maxActive: launch.maxActive,
-            startIntervalMs: launch.startIntervalMs,
-            registryPath,
-          })}\n`,
-        );
-      },
-      onLaneFinish: (event) => {
-        if (event.status !== "completed") failedCount += 1;
-        updateParentLaunch(registryPath, {
-          settledCount: event.settledCount,
-          failedCount,
-          lastLane: event.name,
-          lastLaneStatus: event.status,
-        });
-        process.stdout.write(`${JSON.stringify(event)}\n`);
-      },
-    });
-  } catch (error) {
-    updateParentLaunch(registryPath, {
-      status: "crashed",
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
-  }
-  updateParentLaunch(registryPath, {
-    status: "terminal",
-    settledCount: summary.lanes.length,
-    failedCount: summary.lanes.filter((lane) => lane.status !== "completed").length,
-    finishedAt: summary.finishedAt,
+  const summary = await runLunaLanes(manifest, {
+    outputDir: options.output_dir,
+    codexBin: options.codex_bin,
+    ephemeral: options.ephemeral,
+    onStart: (launch) => {
+      registerParentLaunch(launch);
+      process.stdout.write(
+        `${JSON.stringify({
+          type: "luna_lanes.started",
+          outputDir: launch.outputDir,
+          laneCount: launch.lanes.length,
+          model: launch.model,
+          reasoningEffort: launch.reasoningEffort,
+          serviceTier: launch.serviceTier,
+          runtime: launch.runtime,
+          maxActive: launch.maxActive,
+          startIntervalMs: launch.startIntervalMs,
+        })}\n`,
+      );
+    },
+    onLaneFinish: (event) => process.stdout.write(`${JSON.stringify(event)}\n`),
   });
   const completedCount = summary.lanes.filter((lane) => lane.status === "completed").length;
   const rateLimitedCount = summary.lanes.filter((lane) => lane.failureKind === "rate-limit").length;
@@ -996,8 +928,6 @@ async function main(argv) {
       type: "luna_lanes.completed",
       outputDir: summary.outputDir,
       summaryPath: join(summary.outputDir, "summary.json"),
-      reportsPath: summary.reportsPath,
-      laneCount: summary.lanes.length,
       completedCount,
       failedCount: summary.lanes.length - completedCount,
       rateLimitedCount,
@@ -1019,10 +949,8 @@ if (require.main === module) {
 
 module.exports = {
   drainReports,
-  launchPolicy,
   normalizeManifest,
   parseArgs,
   quickManifest,
   runLunaLanes,
-  validateLauncherRuntime,
 };

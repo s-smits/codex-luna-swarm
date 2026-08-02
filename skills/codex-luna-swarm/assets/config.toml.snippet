@@ -3,7 +3,7 @@
 
 [[hooks.Stop.hooks]]
 type = "command"
-command = 'node "$(git rev-parse --show-toplevel)/.agents/skills/codex-luna-swarm/scripts/luna-stop-hook.cjs"'
+command = 'node "$(git rev-parse --show-toplevel)/.agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs" --stop-hook'
 timeout = 5
 statusMessage = "Checking Luna swarm progress"
 # codex-luna-swarm:end

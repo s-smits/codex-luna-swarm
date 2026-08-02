@@ -17,7 +17,6 @@ for (const path of [
   skillFile,
   metadataFile,
   join(skill, "scripts", "luna-lanes.cjs"),
-  join(skill, "scripts", "luna-stop-hook.cjs"),
   join(skill, "assets", "luna_worker.toml"),
   join(skill, "assets", "AGENTS.md.snippet"),
   join(skill, "assets", "config.toml.snippet"),

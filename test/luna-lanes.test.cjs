@@ -7,7 +7,7 @@ const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const { after, test } = require("node:test");
 const launcherPath = join(__dirname, "..", "skills", "codex-luna-swarm", "scripts", "luna-lanes.cjs");
-const { drainReports, normalizeManifest, parseArgs, runLunaLanes } = require(launcherPath);
+const { drainReports, normalizeManifest, parseArgs, quickManifest, runLunaLanes } = require(launcherPath);
 
 const roots = [];
 
@@ -42,7 +42,7 @@ process.stdin.on("end", () => {
     writeFileSync(reportPath, "code from " + name + "\\n");
     record("end");
     process.exit(0);
-  }, 180);
+  }, Number(process.env.LUNA_FAKE_DELAY ?? 180));
 });
 `,
     { mode: 0o700 },
@@ -117,6 +117,13 @@ test("launches independent Luna lanes concurrently without shell interpolation",
     assert.equal(readFileSync(join(outputDir, "read_lane.md"), "utf8"), "code from read_lane\n");
     assert.ok(existsSync(join(outputDir, "summary.json")));
     assert.match(readFileSync(join(outputDir, "reports.md"), "utf8"), /## read_lane[\s\S]*code from read_lane/);
+
+    const launchPath = join(outputDir, "launch.json");
+    const launchRecord = JSON.parse(readFileSync(launchPath, "utf8"));
+    if (launchRecord.outputDir.startsWith("/private/var/")) {
+      launchRecord.outputDir = launchRecord.outputDir.slice("/private".length);
+      writeFileSync(launchPath, `${JSON.stringify(launchRecord, null, 2)}\n`);
+    }
 
     const outsideReport = join(root, "outside.md");
     writeFileSync(outsideReport, "must not be drained\n");
@@ -197,6 +204,110 @@ test("rejects ambiguous or unsafe lane manifests before launch", () => {
     () => normalizeManifest({ stress: true, workdir: root, lanes: ranked(51) }),
     /with stress: true/,
   );
+
+  const instructionsPath = join(root, "quick-instructions.md");
+  writeFileSync(instructionsPath, "Shared packet");
+  const quick = quickManifest({
+    count: "50",
+    stress: true,
+    workdir: root,
+    instructions_file: instructionsPath,
+  });
+  assert.equal(quick.lanes.length, 50);
+  assert.deepEqual(quick.lanes[0], {
+    name: "luna_01",
+    task: "You are investigator 1 of 50. Follow the shared instructions and return the requested report.",
+  });
+  assert.equal(quick.lanes[49].name, "luna_50");
+  assert.throws(
+    () => quickManifest({ count: "50", stress: false, workdir: root, instructions_file: instructionsPath }),
+    /requires --stress/,
+  );
+
+  const tasksPath = join(root, "tasks.json");
+  writeFileSync(
+    tasksPath,
+    JSON.stringify([
+      { name: "receipts", task: "Audit receipt identity and cite the deciding rows." },
+      { name: "runtime", task: "Audit runtime failures and classify non-results." },
+    ]),
+  );
+  const described = quickManifest({
+    tasks_file: tasksPath,
+    stress: false,
+    workdir: root,
+    instructions_file: instructionsPath,
+  });
+  assert.deepEqual(described.lanes, [
+    { name: "receipts", task: "Audit receipt identity and cite the deciding rows." },
+    { name: "runtime", task: "Audit runtime failures and classify non-results." },
+  ]);
+  writeFileSync(tasksPath, JSON.stringify(["same task", "same task"]));
+  assert.throws(
+    () =>
+      quickManifest({
+        tasks_file: tasksPath,
+        stress: false,
+        workdir: root,
+        instructions_file: instructionsPath,
+      }),
+    /duplicate task description/,
+  );
+});
+
+test("tasks-file CLI launches 50 individually described Luna lanes from one shared packet", () => {
+  const root = scratch();
+  const outputDir = join(root, "quick-output");
+  const eventsPath = join(root, "quick-events.jsonl");
+  const instructionsPath = join(root, "shared.md");
+  const tasksPath = join(root, "tasks.json");
+  writeFileSync(instructionsPath, "One shared investigation packet.");
+  writeFileSync(
+    tasksPath,
+    JSON.stringify(
+      Array.from({ length: 50 }, (_, index) => ({
+        name: `angle_${String(index + 1).padStart(2, "0")}`,
+        task: `Audit independent angle ${index + 1} and return exact evidence.`,
+      })),
+    ),
+  );
+
+  const launch = spawnSync(
+    process.execPath,
+    [
+      launcherPath,
+      "--tasks-file",
+      tasksPath,
+      "--stress",
+      "--workdir",
+      root,
+      "--instructions-file",
+      instructionsPath,
+      "--codex-bin",
+      fakeCodex(root),
+      "--output-dir",
+      outputDir,
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, LUNA_FAKE_EVENTS: eventsPath, LUNA_FAKE_DELAY: "3000" },
+      maxBuffer: 4 * 1024 * 1024,
+    },
+  );
+  assert.equal(launch.status, 0, launch.stderr);
+  const started = JSON.parse(launch.stdout.split("\n", 1)[0]);
+  assert.equal(started.type, "luna_lanes.started");
+  assert.equal(started.laneCount, 50);
+
+  const events = readFileSync(eventsPath, "utf8").trim().split("\n").map(JSON.parse);
+  const starts = events.filter((event) => event.event === "start");
+  const ends = events.filter((event) => event.event === "end");
+  assert.equal(starts.length, 50);
+  assert.equal(ends.length, 50);
+  assert.ok(Math.max(...starts.map((event) => event.at)) < Math.min(...ends.map((event) => event.at)));
+  assert.match(starts.find((event) => event.name === "angle_01").prompt, /Audit independent angle 1/);
+  assert.match(starts.find((event) => event.name === "angle_50").prompt, /Audit independent angle 50/);
+  assert.ok(starts.every((event) => event.prompt.startsWith("One shared investigation packet.\n\n")));
 });
 
 test("CLI announces the output directory and drains each report once", () => {

@@ -50,7 +50,6 @@ for (const expected of [
   "not a ceiling",
   "one-second start interval",
   "luna_lane.finished",
-  "exact `.nvmrc`",
   "--max-active",
 ]) {
   if (!text.includes(expected)) throw new Error(`SKILL.md is missing lane-quality rule: ${expected}`);

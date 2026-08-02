@@ -25,6 +25,8 @@ Nothing is added to global Codex configuration.
 
 ## Installation
 
+The scripts support Node 20 and newer; CI covers Node 20, 22, 24 and 26.
+
 For the Codex agent handling the request:
 
 1. Resolve the current Git root and inspect its `AGENTS.md` instructions and `git status --short`.
@@ -92,9 +94,6 @@ excluded.
 The launcher needs access to the active Codex state directory because it starts nested Codex CLI
 processes. If the main shell tool is sandboxed, grant the launcher command that access once; the
 individual lane sandboxes remain read-only.
-
-Select the repository's Node version in the launch command. An exact `.nvmrc` mismatch refuses
-before spawning; nested lanes use the verified executable through isolated zsh startup.
 
 The fallback's `--drain` command prints each newly finished report once. The main agent does not
 need to read or reproduce the launcher.

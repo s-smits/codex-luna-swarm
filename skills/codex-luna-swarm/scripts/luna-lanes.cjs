@@ -311,19 +311,6 @@ function createOutputDirectory(explicit) {
   return output;
 }
 
-function validateLauncherRuntime(lanes) {
-  for (const lane of lanes) {
-    const path = join(lane.workdir, ".nvmrc");
-    const match = regularFileExists(path) && readFileSync(path, "utf8").trim().match(/^v?(\d+\.\d+\.\d+)$/);
-    if (match && `v${match[1]}` !== process.version) {
-      throw new Error(
-        `${path} requires Node v${match[1]}, but the Luna launcher runs ${process.version}; ` +
-          "invoke the launcher with the required Node binary before starting lanes",
-      );
-    }
-  }
-}
-
 function createLaneEnvironment(outputDir) {
   const executable = realpathSync(process.execPath);
   const nodeDirectory = dirname(executable);
@@ -579,7 +566,6 @@ function reportSection(result) {
 
 async function runLunaLanes(rawManifest, options = {}) {
   const lanes = normalizeManifest(rawManifest);
-  validateLauncherRuntime(lanes);
   const policy = launchPolicy(rawManifest, lanes.length);
   const stress = !Array.isArray(rawManifest) && rawManifest?.stress === true;
   const outputDir = createOutputDirectory(options.outputDir);

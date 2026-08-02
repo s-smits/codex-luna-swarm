@@ -11,8 +11,7 @@ and proof contract. A title, line range, or single question is not enough. Use `
 an explicit rank-based concurrency test. Start it in the same turn; do not stop after promising to
 launch. A sandboxed parent must grant the launcher access to Codex state; lane sandboxes remain
 read-only. Stress task files start lanes one second apart; use `--max-active` to keep excess work
-queued after a rate-limit non-result. Select the repository's Node version in the same shell call as
-the launcher; it refuses an exact `.nvmrc` mismatch and isolates nested user shell startup. Follow
-the launcher's `luna_lane.finished` events and use `--drain` for full reports. Preserve Luna
+queued after a rate-limit non-result. Follow the launcher's `luna_lane.finished` events and use
+`--drain` for full reports. Preserve Luna
 identity; never substitute Sol, Terra, or a coordinator. Do not read or reimplement the launcher.
 <!-- codex-luna-swarm:end -->

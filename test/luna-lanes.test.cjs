@@ -173,20 +173,6 @@ test("launches independent Luna lanes concurrently without shell interpolation",
   }
 });
 
-test("refuses an exact .nvmrc mismatch before spawning lanes", async () => {
-  const root = scratch();
-  const outputDir = join(root, "must-not-exist");
-  writeFileSync(join(root, ".nvmrc"), "v0.0.1\n");
-  await assert.rejects(
-    runLunaLanes(
-      { workdir: root, lanes: [{ name: "runtime", task: "Inspect the runtime." }] },
-      { codexBin: fakeCodex(root), outputDir },
-    ),
-    /requires Node v0\.0\.1, but the Luna launcher runs/,
-  );
-  assert.equal(existsSync(outputDir), false);
-});
-
 test("rejects ambiguous or unsafe lane manifests before launch", () => {
   const root = scratch();
   assert.throws(

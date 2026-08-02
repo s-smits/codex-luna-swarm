@@ -134,10 +134,6 @@ installed repo-local `Stop` hook keeps only its parent task active and wakes it 
 or crash. Trust a new or changed project hook once through `/hooks`; child lanes and other task IDs
 are excluded.
 
-Select the repository's Node version in the same shell-tool call as the launcher. An exact `.nvmrc`
-mismatch refuses before launch. Nested lanes inherit that executable through a private zsh startup
-directory, so user startup files cannot replace the verified runtime.
-
 Use `--count N` only for a genuine concurrency test or when the shared packet itself maps each
 investigator number to a distinct assignment. It creates `luna_01` through `luna_N`; an optional
 `--task-template` may use `{i}` and `{count}`. Do not use generic numbered prompts when the main

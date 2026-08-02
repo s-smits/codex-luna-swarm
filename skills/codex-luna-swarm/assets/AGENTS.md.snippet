@@ -1,9 +1,11 @@
 <!-- codex-luna-swarm:start -->
 ## Luna subagents
 
-When the operator explicitly requests Luna agents or a Luna swarm, use `$codex-luna-swarm`.
-Preserve the requested Luna identity; do not substitute Sol, Terra, or a coordinator. Keep lanes
-read-only unless the operator authorises writes, and give every write lane explicit ownership.
-The skill owns native spawning, the compatibility launcher, collection, and limits; do not read or
-reimplement its launcher in the main session.
+When the operator requests Luna agents, use `$codex-luna-swarm`; it owns transport even when
+another skill defines the investigation. For 1-15 lanes, prefer native `luna_worker`. For an
+explicit 16-50 lanes, do not call `spawn_agent`: write one distinct task description per lane and
+invoke the installed launcher's `--tasks-file` route with `--stress`. Use `--count` only for an
+explicit rank-based concurrency test. Start it in the same turn; do not stop after promising to
+launch. Preserve Luna identity; never substitute Sol, Terra, or a coordinator. Do not read or
+reimplement the launcher.
 <!-- codex-luna-swarm:end -->

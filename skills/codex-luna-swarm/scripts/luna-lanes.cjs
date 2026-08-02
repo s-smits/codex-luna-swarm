@@ -41,26 +41,45 @@ const MAX_EVENT_PREFIX_BYTES = 1024 * 1024;
 function usage() {
   return [
     "Usage: luna-lanes --manifest <absolute-json-path> [options]",
+    "       luna-lanes --count <1-50> --workdir <absolute-directory> --instructions-file <absolute-file> [options]",
+    "       luna-lanes --tasks-file <absolute-json-path> --workdir <absolute-directory> --instructions-file <absolute-file> [options]",
     "       luna-lanes --drain <absolute-output-directory>",
     "",
     "Options:",
     "  --output-dir <absolute-new-directory>",
     "  --codex-bin <absolute-executable>",
+    "  --task-template <text with optional {i} and {count}>",
+    "  --stress  Required when a direct launch contains 16-50 lanes",
     "  --ephemeral",
     "  --help",
   ].join("\n");
 }
 
 function parseArgs(argv) {
-  const parsed = { ephemeral: false };
+  const parsed = { ephemeral: false, stress: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--ephemeral") {
       if (parsed.ephemeral) throw new Error("Duplicate argument: --ephemeral");
       parsed.ephemeral = true;
+    } else if (arg === "--stress") {
+      if (parsed.stress) throw new Error("Duplicate argument: --stress");
+      parsed.stress = true;
     } else if (arg === "--help") {
       parsed.help = true;
-    } else if (["--manifest", "--drain", "--output-dir", "--codex-bin"].includes(arg)) {
+    } else if (
+      [
+        "--manifest",
+        "--drain",
+        "--output-dir",
+        "--codex-bin",
+        "--count",
+        "--tasks-file",
+        "--workdir",
+        "--instructions-file",
+        "--task-template",
+      ].includes(arg)
+    ) {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new Error(`Missing value for ${arg}`);
       const key = arg.slice(2).replaceAll("-", "_");
@@ -72,6 +91,85 @@ function parseArgs(argv) {
     }
   }
   return parsed;
+}
+
+function quickManifest(options) {
+  if (Boolean(options.count) === Boolean(options.tasks_file)) {
+    throw new Error("choose exactly one of --count or --tasks-file for a direct launch");
+  }
+  let source;
+  if (options.tasks_file) {
+    if (options.task_template !== undefined) {
+      throw new Error("--task-template is accepted only with --count");
+    }
+    const tasksPath = absoluteExistingFile(options.tasks_file, "--tasks-file");
+    if (statSync(tasksPath).size > MAX_MANIFEST_BYTES) {
+      throw new Error(`--tasks-file exceeds ${MAX_MANIFEST_BYTES} bytes`);
+    }
+    source = JSON.parse(readFileSync(tasksPath, "utf8"));
+    if (!Array.isArray(source)) throw new Error("--tasks-file must contain a JSON array");
+  } else {
+    if (!/^\d+$/.test(options.count)) throw new Error("--count must be an integer from 1 to 50");
+    const count = Number(options.count);
+    if (count < 1 || count > STRESS_MAX_LANES) throw new Error("--count must be an integer from 1 to 50");
+    source = Array.from({ length: count }, () => null);
+  }
+  const count = source.length;
+  if (count < 1 || count > STRESS_MAX_LANES) {
+    throw new Error("direct launch must contain 1-50 lanes");
+  }
+  if (count > NORMAL_MAX_LANES && !options.stress) {
+    throw new Error("direct launch of 16-50 lanes requires --stress");
+  }
+  if (!options.workdir) throw new Error("--workdir is required for a direct launch");
+  if (!options.instructions_file) throw new Error("--instructions-file is required for a direct launch");
+  const template =
+    options.task_template ??
+    "You are investigator {i} of {count}. Follow the shared instructions and return the requested report.";
+  if (typeof template !== "string" || template.trim().length === 0) {
+    throw new Error("--task-template must be non-empty text");
+  }
+  const width = Math.max(2, String(count).length);
+  const lanes = source.map((entry, index) => {
+    const rank = index + 1;
+    if (options.tasks_file) {
+      if (typeof entry === "string") {
+        return { name: `luna_${String(rank).padStart(width, "0")}`, task: entry };
+      }
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error(`tasks[${index}] must be a string or an object with name and task`);
+      }
+      const unexpected = Object.keys(entry).filter((key) => !new Set(["name", "task"]).has(key));
+      if (unexpected.length > 0) {
+        throw new Error(`tasks[${index}] has unsupported fields: ${unexpected.join(", ")}`);
+      }
+      return {
+        name: entry.name ?? `luna_${String(rank).padStart(width, "0")}`,
+        task: entry.task,
+      };
+    }
+    return {
+      name: `luna_${String(rank).padStart(width, "0")}`,
+      task: template.replaceAll("{i}", String(rank)).replaceAll("{count}", String(count)),
+    };
+  });
+  if (options.tasks_file) {
+    const descriptions = new Set();
+    lanes.forEach((lane, index) => {
+      if (typeof lane.task !== "string" || lane.task.trim().length === 0) {
+        throw new Error(`tasks[${index}].task must be non-empty text`);
+      }
+      const description = lane.task.trim();
+      if (descriptions.has(description)) throw new Error(`duplicate task description at tasks[${index}]`);
+      descriptions.add(description);
+    });
+  }
+  return {
+    workdir: options.workdir,
+    instructionsFile: options.instructions_file,
+    stress: options.stress,
+    lanes,
+  };
 }
 
 function absoluteExistingDirectory(value, field) {
@@ -595,8 +693,11 @@ async function main(argv) {
     process.stdout.write(`${usage()}\n`);
     return 0;
   }
-  if (Boolean(options.manifest) === Boolean(options.drain)) {
-    throw new Error("choose exactly one of --manifest or --drain");
+  const quickOptionNames = ["count", "tasks_file", "workdir", "instructions_file", "task_template"];
+  const usesQuickLaunch = options.stress || quickOptionNames.some((name) => options[name] !== undefined);
+  const modeCount = Number(Boolean(options.manifest)) + Number(Boolean(options.drain)) + Number(usesQuickLaunch);
+  if (modeCount !== 1) {
+    throw new Error("choose exactly one of --manifest, a direct launch, or --drain");
   }
   if (options.drain) {
     if (options.output_dir || options.codex_bin || options.ephemeral) {
@@ -605,12 +706,17 @@ async function main(argv) {
     await drainReports(options.drain, writeStdout);
     return 0;
   }
-  if (!isAbsolute(options.manifest)) throw new Error("--manifest must be an absolute path");
-  const manifestPath = absoluteExistingFile(options.manifest, "--manifest");
-  if (statSync(manifestPath).size > MAX_MANIFEST_BYTES) {
-    throw new Error(`--manifest exceeds ${MAX_MANIFEST_BYTES} bytes`);
+  let manifest;
+  if (options.manifest) {
+    if (!isAbsolute(options.manifest)) throw new Error("--manifest must be an absolute path");
+    const manifestPath = absoluteExistingFile(options.manifest, "--manifest");
+    if (statSync(manifestPath).size > MAX_MANIFEST_BYTES) {
+      throw new Error(`--manifest exceeds ${MAX_MANIFEST_BYTES} bytes`);
+    }
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } else {
+    manifest = quickManifest(options);
   }
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const summary = await runLunaLanes(manifest, {
     outputDir: options.output_dir,
     codexBin: options.codex_bin,
@@ -643,4 +749,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { drainReports, normalizeManifest, parseArgs, runLunaLanes };
+module.exports = { drainReports, normalizeManifest, parseArgs, quickManifest, runLunaLanes };

@@ -1,12 +1,25 @@
 ---
 name: codex-luna-swarm
-description: Launch and collect multiple independent gpt-5.6-luna subagents for bounded parallel work. Use when the user explicitly asks for Luna agents, a Luna swarm, many parallel Luna lanes, or a concurrency test that must preserve Luna identity instead of substituting another model.
+description: Launch and collect multiple independent gpt-5.6-luna subagents for bounded parallel work. This skill owns Luna transport even when another investigation or review skill defines the lane questions. Use whenever the user asks to launch Luna agents, a Luna swarm, many Luna lanes, or a concurrency test. For an explicit 16-50 lanes, invoke the direct launcher immediately instead of attempting native spawn_agent.
 ---
 
 # Codex Luna Swarm
 
 Launch one independent Luna worker per bounded task. Keep orchestration in the main session and
 return concise lane reports without filling the main context with intermediate work.
+
+## Act on a launch request
+
+Start the launch in the same turn as the request. Do not stop after saying that the lanes will be
+launched. Read a shared instruction packet once, resolve its path once, and pass it to the
+launcher. Another skill may define the investigation, but this skill still owns how Luna runs.
+
+Route by count:
+
+- For 1-15 lanes, prefer native `luna_worker` agents.
+- For an explicit 16-50 lanes, skip native spawning. Write one distinct task description per lane,
+  then use the direct launcher with `--tasks-file` and `--stress`.
+- Refuse more than 50. Do not batch the request and call it concurrent.
 
 ## Define the lanes
 
@@ -21,7 +34,7 @@ return concise lane reports without filling the main context with intermediate w
 For investigation, treat lane reports as research. Verify any finding that changes a decision
 against source or receipts in the main session.
 
-## Prefer native Luna agents
+## Use native Luna agents for 1-15 lanes
 
 For 1-15 lanes, call `spawn_agent` once per lane in one main-agent message with:
 
@@ -34,9 +47,8 @@ Do not pass `model` or `reasoning_effort`; the installed project custom agent ow
 `gpt-5.6-luna` and `max`. Do not wrap Luna in a Sol or Terra agent and do not substitute another
 agent when Luna is unavailable.
 
-Use the deterministic fallback when native `luna_worker` is rejected by the active model catalogue,
-or when the explicitly requested count is larger than the native session capacity. Report why the
-fallback is needed. Do not spend time retrying an unchanged native rejection.
+Use the deterministic launcher for 1-15 lanes only when native `luna_worker` is rejected by the
+active model catalogue. Report the rejection once and do not retry an unchanged error.
 
 ## Use the fallback launcher
 
@@ -44,6 +56,35 @@ Resolve `scripts/luna-lanes.cjs` relative to this `SKILL.md`. Do not read, copy,
 launcher in the main session. It starts one independent `codex exec` process per lane, pins
 `gpt-5.6-luna` with `max` reasoning and priority service, sends prompts over stdin without a shell,
 and writes per-lane receipts.
+
+For a read-only investigation, write a compact JSON task file. The main agent owns these
+descriptions; the shared packet owns only common evidence, constraints, and output shape.
+
+```json
+[
+  { "name": "receipts", "task": "Audit receipt identity and cite the deciding rows." },
+  { "name": "runtime", "task": "Classify runtime failures and typed non-results." }
+]
+```
+
+Launch every described lane with one command:
+
+```sh
+node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
+  --tasks-file /absolute/luna-tasks.json \
+  --stress \
+  --workdir /absolute/worktree \
+  --instructions-file /absolute/shared-instructions.md
+```
+
+Each task row may be a `{ "name", "task" }` object or a task string, in which case the launcher
+assigns a numbered name. Keep each task concrete and bounded. The tasks-file form is read-only;
+use a manifest for write lanes or per-lane worktrees.
+
+Use `--count N` only for a genuine concurrency test or when the shared packet itself maps each
+investigator number to a distinct assignment. It creates `luna_01` through `luna_N`; an optional
+`--task-template` may use `{i}` and `{count}`. Do not use generic numbered prompts when the main
+agent can state the distinct questions.
 
 Create a compact JSON manifest:
 
@@ -63,8 +104,7 @@ The top-level worktree and sandbox apply to every lane unless overridden. `sandb
 `prompt` and `workdir` form remains accepted.
 
 A normal manifest contains 1-15 lanes. Only when the user explicitly names 16-50 concurrent lanes,
-add `"stress": true`. Refuse counts above 50 rather than silently batching them and calling the run
-concurrent.
+add `"stress": true`.
 
 Launch once:
 

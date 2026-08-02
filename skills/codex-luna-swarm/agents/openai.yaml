@@ -1,4 +1,4 @@
 interface:
   display_name: "Codex Luna Swarm"
   short_description: "Launch and collect independent Luna lanes"
-  default_prompt: "Use $codex-luna-swarm to launch bounded Luna subagents in parallel and collect their reports."
+  default_prompt: "Use $codex-luna-swarm to launch the requested Luna lanes now, give each lane a distinct bounded task, and collect their reports."

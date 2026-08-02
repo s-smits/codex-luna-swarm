@@ -409,24 +409,16 @@ function registerParentLaunch(launch) {
   if (!path) return null;
   if (regularFileExists(path)) {
     const previous = readJson(path, "Luna launch registry");
-    if (previous?.status === "active" && processIsAlive(previous?.pid)) {
+    if (processIsAlive(previous?.pid)) {
       throw new Error(`another Luna launcher is already active for this Codex task: ${previous.outputDir}`);
     }
   }
-  const record = {
+  atomicJson(path, {
     threadId: process.env.CODEX_THREAD_ID,
     pid: process.pid,
-    status: "active",
     outputDir: launch.outputDir,
-  };
-  atomicJson(path, record, true);
-  return { path, record };
-}
-
-function finishParentLaunch(registry, update) {
-  if (registry && regularFileExists(registry.path)) {
-    atomicJson(registry.path, { ...registry.record, ...update }, true);
-  }
+  }, true);
+  return path;
 }
 
 function regularFileExists(path) {
@@ -891,42 +883,27 @@ async function main(argv) {
   } else {
     manifest = quickManifest(options);
   }
-  let registry = null;
-  let summary;
-  try {
-    summary = await runLunaLanes(manifest, {
-      outputDir: options.output_dir,
-      codexBin: options.codex_bin,
-      ephemeral: options.ephemeral,
-      onStart: (launch) => {
-        registry = registerParentLaunch(launch);
-        process.stdout.write(
-          `${JSON.stringify({
-            type: "luna_lanes.started",
-            outputDir: launch.outputDir,
-            laneCount: launch.lanes.length,
-            model: launch.model,
-            reasoningEffort: launch.reasoningEffort,
-            serviceTier: launch.serviceTier,
-            runtime: launch.runtime,
-            maxActive: launch.maxActive,
-            startIntervalMs: launch.startIntervalMs,
-          })}\n`,
-        );
-      },
-      onLaneFinish: (event) => {
-        process.stdout.write(`${JSON.stringify(event)}\n`);
-      },
-    });
-  } catch (error) {
-    finishParentLaunch(registry, {
-      status: "crashed",
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
-  }
-  finishParentLaunch(registry, {
-    status: "terminal",
+  const summary = await runLunaLanes(manifest, {
+    outputDir: options.output_dir,
+    codexBin: options.codex_bin,
+    ephemeral: options.ephemeral,
+    onStart: (launch) => {
+      registerParentLaunch(launch);
+      process.stdout.write(
+        `${JSON.stringify({
+          type: "luna_lanes.started",
+          outputDir: launch.outputDir,
+          laneCount: launch.lanes.length,
+          model: launch.model,
+          reasoningEffort: launch.reasoningEffort,
+          serviceTier: launch.serviceTier,
+          runtime: launch.runtime,
+          maxActive: launch.maxActive,
+          startIntervalMs: launch.startIntervalMs,
+        })}\n`,
+      );
+    },
+    onLaneFinish: (event) => process.stdout.write(`${JSON.stringify(event)}\n`),
   });
   const completedCount = summary.lanes.filter((lane) => lane.status === "completed").length;
   const rateLimitedCount = summary.lanes.filter((lane) => lane.failureKind === "rate-limit").length;

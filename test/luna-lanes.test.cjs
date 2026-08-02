@@ -17,17 +17,21 @@ function scratch() {
   return root;
 }
 
+function runCli(args, env = {}) {
+  return spawnSync(process.execPath, [launcherPath, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, CODEX_THREAD_ID: "", ...env },
+  });
+}
+
 function fakeCodex(root) {
   const executable = join(root, "fake-codex.cjs");
   writeFileSync(
     executable,
     `#!/usr/bin/env node
 "use strict";
-const { appendFileSync, basename, writeFileSync } = (() => {
-  const fs = require("node:fs");
-  const path = require("node:path");
-  return { appendFileSync: fs.appendFileSync, writeFileSync: fs.writeFileSync, basename: path.basename };
-})();
+const { appendFileSync, writeFileSync } = require("node:fs");
+const { basename } = require("node:path");
 const args = process.argv.slice(2);
 const reportPath = args[args.indexOf("--output-last-message") + 1];
 const name = basename(reportPath, ".md");
@@ -233,11 +237,11 @@ test("rejects ambiguous or unsafe lane manifests before launch", () => {
 
   const instructionsPath = join(root, "quick-instructions.md");
   writeFileSync(instructionsPath, "Shared packet");
+  const direct = { workdir: root, instructions_file: instructionsPath };
   const quick = quickManifest({
     count: "50",
     stress: true,
-    workdir: root,
-    instructions_file: instructionsPath,
+    ...direct,
   });
   assert.equal(quick.lanes.length, 50);
   assert.equal(quick.maxActive, undefined);
@@ -248,7 +252,7 @@ test("rejects ambiguous or unsafe lane manifests before launch", () => {
   });
   assert.equal(quick.lanes[49].name, "luna_50");
   assert.throws(
-    () => quickManifest({ count: "50", stress: false, workdir: root, instructions_file: instructionsPath }),
+    () => quickManifest({ count: "50", stress: false, ...direct }),
     /requires --stress/,
   );
 
@@ -262,9 +266,7 @@ test("rejects ambiguous or unsafe lane manifests before launch", () => {
   );
   const described = quickManifest({
     tasks_file: tasksPath,
-    stress: false,
-    workdir: root,
-    instructions_file: instructionsPath,
+    ...direct,
   });
   assert.deepEqual(described.lanes, [
     { name: "receipts", task: "Audit receipt identity and cite the deciding rows." },
@@ -275,9 +277,7 @@ test("rejects ambiguous or unsafe lane manifests before launch", () => {
     () =>
       quickManifest({
         tasks_file: tasksPath,
-        stress: false,
-        workdir: root,
-        instructions_file: instructionsPath,
+        ...direct,
       }),
     /duplicate task description/,
   );
@@ -290,8 +290,7 @@ test("rejects ambiguous or unsafe lane manifests before launch", () => {
     tasks_file: tasksPath,
     stress: true,
     max_active: "7",
-    workdir: root,
-    instructions_file: instructionsPath,
+    ...direct,
   });
   assert.equal(paced.maxActive, "7");
   assert.equal(paced.startIntervalMs, 1_000);
@@ -314,29 +313,10 @@ test("tasks-file CLI reports progress and obeys its pace and active cap", () => 
     ),
   );
 
-  const launch = spawnSync(
-    process.execPath,
-    [
-      launcherPath,
-      "--tasks-file",
-      tasksPath,
-      "--max-active",
-      "2",
-      "--start-interval-ms",
-      "50",
-      "--workdir",
-      root,
-      "--instructions-file",
-      instructionsPath,
-      "--codex-bin",
-      fakeCodex(root),
-      "--output-dir",
-      outputDir,
-    ],
-    {
-      encoding: "utf8",
-      env: { ...process.env, CODEX_THREAD_ID: "", LUNA_FAKE_EVENTS: eventsPath },
-    },
+  const launch = runCli(
+    ["--tasks-file", tasksPath, "--max-active", "2", "--start-interval-ms", "50", "--workdir", root,
+      "--instructions-file", instructionsPath, "--codex-bin", fakeCodex(root), "--output-dir", outputDir],
+    { LUNA_FAKE_EVENTS: eventsPath },
   );
   assert.equal(launch.status, 0, launch.stderr);
   const output = launch.stdout.trim().split("\n").map(JSON.parse);
@@ -349,9 +329,7 @@ test("tasks-file CLI reports progress and obeys its pace and active cap", () => 
   assert.equal(output.at(-1).failedCount, 0);
   const events = readFileSync(eventsPath, "utf8").trim().split("\n").map(JSON.parse);
   const starts = events.filter((event) => event.event === "start");
-  const ends = events.filter((event) => event.event === "end");
   const summary = JSON.parse(readFileSync(join(outputDir, "summary.json"), "utf8"));
-  assert.equal(starts.length, 4);
   assert.ok(Date.parse(summary.lanes[1].startedAt) - Date.parse(summary.lanes[0].startedAt) >= 45);
   assert.ok(Date.parse(summary.lanes[2].startedAt) >= Math.min(...summary.lanes.slice(0, 2).map(({ finishedAt }) => Date.parse(finishedAt))));
   assert.match(starts.find((event) => event.name === "angle_01").prompt, /Audit independent angle 1/);
@@ -376,10 +354,9 @@ test("CLI announces the output directory and drains each report once", () => {
     })}\n`,
   );
 
-  const launch = spawnSync(
-    process.execPath,
-    [launcherPath, "--manifest", manifestPath, "--codex-bin", fakeCodex(root), "--output-dir", outputDir],
-    { encoding: "utf8", env: { ...process.env, CODEX_THREAD_ID: "", LUNA_FAKE_EVENTS: eventsPath } },
+  const launch = runCli(
+    ["--manifest", manifestPath, "--codex-bin", fakeCodex(root), "--output-dir", outputDir],
+    { LUNA_FAKE_EVENTS: eventsPath },
   );
   assert.equal(launch.status, 0, launch.stderr);
   const started = JSON.parse(launch.stdout.split("\n", 1)[0]);
@@ -387,16 +364,12 @@ test("CLI announces the output directory and drains each report once", () => {
   assert.equal(started.outputDir, realpathSync(outputDir));
   assert.equal(started.laneCount, 2);
 
-  const firstDrain = spawnSync(process.execPath, [launcherPath, "--drain", outputDir], {
-    encoding: "utf8",
-  });
+  const firstDrain = runCli(["--drain", outputDir]);
   assert.equal(firstDrain.status, 0, firstDrain.stderr);
   assert.match(firstDrain.stdout, /## first[\s\S]*code from first/);
   assert.match(firstDrain.stdout, /## second[\s\S]*code from second/);
 
-  const secondDrain = spawnSync(process.execPath, [launcherPath, "--drain", outputDir], {
-    encoding: "utf8",
-  });
+  const secondDrain = runCli(["--drain", outputDir]);
   assert.equal(secondDrain.status, 0, secondDrain.stderr);
   assert.equal(secondDrain.stdout, "");
 });

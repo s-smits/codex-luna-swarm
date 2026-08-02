@@ -38,13 +38,14 @@ function main() {
     return reply({ decision: "block", reason: "The Luna launcher registry is unreadable. Inspect its terminal." });
   }
   if (record.threadId !== id || typeof record.outputDir !== "string") return reply({});
-  if (record.status === "active" && alive(record.pid)) {
+  const terminal = existsSync(join(record.outputDir, "summary.json"));
+  if (!terminal && alive(record.pid)) {
     const reason = `The Luna launcher is active at ${record.outputDir}. Poll it, follow luna_lane.finished events, and drain reports before ending.`;
     return reply({ decision: "block", reason });
   }
 
   unlinkSync(path);
-  const reason = record.status === "terminal"
+  const reason = terminal
     ? `The Luna launcher finished at ${record.outputDir}. Drain and settle it.`
     : `The Luna launcher stopped unexpectedly at ${record.outputDir}. Inspect its terminal and missing lanes.`;
   return reply({ decision: "block", reason });

@@ -4,16 +4,15 @@
 When the operator requests Luna agents, use `$codex-luna-swarm` first; another skill may define
 the questions but does not replace it. Resolve every named packet or attachment from the current
 message before browsing, installation, repository inspection, or planning. If one is absent, ask
-for it immediately and stop. For 1-15 lanes, prefer native `luna_worker`. For 16 or more, do not
-call `spawn_agent`: write one distinct task description per lane and invoke the installed
-launcher's `--tasks-file` route. The launcher has no lane-count ceiling. For an investigation, the
-main agent must give every lane an exhaustive, self-contained explanation of its owned angle,
-starting flows, independent hypotheses, source census, adjacent-finding boundary, Skill selection,
-and proof contract. A title, line range, or single question is not enough. Use `--count` only for
-an explicit rank-based concurrency test. Start it in the same turn; do not stop after promising to
-launch. A sandboxed parent must grant the launcher access to Codex state; lane sandboxes remain
-read-only. Stress task files start lanes one second apart; use `--max-active` to keep excess work
-queued after a rate-limit non-result. Follow the launcher's `luna_lane.finished` events and use
-`--drain` for full reports. Preserve Luna
-identity; never substitute Sol, Terra, or a coordinator. Do not read or reimplement the launcher.
+for it immediately and stop. Treat “launch” alone as launch-only; wait and drain only when the
+operator also asks to collect, review, or summarise. Say `preparing` until every native call is
+accepted or the fallback emits `luna_lanes.started`; only then say `launched`.
+
+For 1-15 lanes, try native `luna_worker`; one catalogue rejection is enough to use the fallback.
+For 16 or more, use the installed launcher's `--tasks-file` route directly. It has no lane-count
+ceiling. Give every lane one distinct owned angle, starting point, authority, and outcome. Keep
+common evidence in one packet, require hypotheses only for causal or defect questions, and validate
+meaning rather than exact phrases. Use `--launch-only` for start-only work; omit it when the Stop
+hook should retain the parent through collection. Preserve Luna identity and never substitute Sol,
+Terra, or a coordinator. Do not read or reimplement the launcher.
 <!-- codex-luna-swarm:end -->

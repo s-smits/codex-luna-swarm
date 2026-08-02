@@ -318,6 +318,8 @@ test("CLI announces the output directory and drains each report once", () => {
   const outputDir = join(root, "cli-output");
   const manifestPath = join(root, "manifest.json");
   const eventsPath = join(root, "cli-events.jsonl");
+  const parentId = `test_launch_only_${process.pid}_${Math.random().toString(16).slice(2)}`;
+  const registryPath = join(tmpdir(), "codex-luna-swarm", `${parentId}.json`);
   writeFileSync(
     manifestPath,
     `${JSON.stringify({
@@ -331,14 +333,17 @@ test("CLI announces the output directory and drains each report once", () => {
   );
 
   const launch = runCli(
-    ["--manifest", manifestPath, "--codex-bin", fakeCodex(root), "--output-dir", outputDir],
-    { LUNA_FAKE_EVENTS: eventsPath },
+    ["--manifest", manifestPath, "--launch-only", "--codex-bin", fakeCodex(root), "--output-dir", outputDir],
+    { LUNA_FAKE_EVENTS: eventsPath, CODEX_THREAD_ID: parentId },
   );
   assert.equal(launch.status, 0, launch.stderr);
   const started = JSON.parse(launch.stdout.split("\n", 1)[0]);
   assert.equal(started.type, "luna_lanes.started");
   assert.equal(started.outputDir, realpathSync(outputDir));
   assert.equal(started.laneCount, 2);
+  assert.equal(started.launchOnly, true);
+  assert.equal(existsSync(registryPath), false);
+  assert.equal(JSON.parse(readFileSync(join(outputDir, "summary.json"), "utf8")).launchOnly, true);
 
   const firstDrain = runCli(["--drain", outputDir]);
   assert.equal(firstDrain.status, 0, firstDrain.stderr);

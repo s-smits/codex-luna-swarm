@@ -50,6 +50,7 @@ function usage() {
     "  --task-template <text with optional {i} and {count}>",
     "  --max-active <positive-integer>  Queue remaining tasks behind this active-lane cap",
     "  --start-interval-ms <0-60000>  Minimum time between lane starts",
+    "  --launch-only  Do not retain the parent task for report collection",
     "  --ephemeral",
     "  --help",
   ].join("\n");
@@ -59,7 +60,7 @@ function parseArgs(argv) {
   const parsed = { ephemeral: false, stress: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (["--ephemeral", "--stress", "--stop-hook"].includes(arg)) {
+    if (["--ephemeral", "--stress", "--launch-only", "--stop-hook"].includes(arg)) {
       const key = arg.slice(2).replaceAll("-", "_");
       if (parsed[key]) throw new Error(`Duplicate argument: ${arg}`);
       parsed[key] = true;
@@ -566,6 +567,7 @@ async function runLunaLanes(rawManifest, options = {}) {
     runtime: laneEnvironment.record,
     maxActive: policy.maxActive,
     startIntervalMs: policy.startIntervalMs,
+    launchOnly: options.launchOnly === true,
     stress,
     outputDir,
     startedAt,
@@ -617,6 +619,7 @@ async function runLunaLanes(rawManifest, options = {}) {
     runtime: laneEnvironment.record,
     maxActive: policy.maxActive,
     startIntervalMs: policy.startIntervalMs,
+    launchOnly: options.launchOnly === true,
     stress,
     outputDir,
     startedAt,
@@ -846,6 +849,7 @@ async function main(argv) {
       options.output_dir ||
       options.codex_bin ||
       options.ephemeral ||
+      options.launch_only ||
       options.max_active ||
       options.start_interval_ms
     ) {
@@ -874,8 +878,9 @@ async function main(argv) {
     outputDir: options.output_dir,
     codexBin: options.codex_bin,
     ephemeral: options.ephemeral,
+    launchOnly: options.launch_only,
     onStart: (launch) => {
-      registerParentLaunch(launch);
+      if (!launch.launchOnly) registerParentLaunch(launch);
       process.stdout.write(
         `${JSON.stringify({
           type: "luna_lanes.started",
@@ -887,6 +892,7 @@ async function main(argv) {
           runtime: launch.runtime,
           maxActive: launch.maxActive,
           startIntervalMs: launch.startIntervalMs,
+          launchOnly: launch.launchOnly,
         })}\n`,
       );
     },

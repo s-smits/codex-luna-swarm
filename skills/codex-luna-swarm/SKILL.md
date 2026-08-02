@@ -1,198 +1,179 @@
 ---
 name: codex-luna-swarm
-description: Launch and collect multiple independent gpt-5.6-luna subagents for bounded parallel work. This skill owns Luna transport even when another investigation or review skill defines the lane questions. Use whenever the user asks to launch Luna agents, a Luna swarm, many Luna lanes, or a concurrency test. For 16 or more lanes, invoke the direct launcher immediately instead of attempting native spawn_agent.
+description: Launch, start, monitor, and collect multiple independent gpt-5.6-luna subagents for bounded parallel work. This skill owns Luna transport even when another investigation or review skill defines the questions. Use whenever the user asks for Luna agents, a Luna swarm, many Luna lanes, a concurrency test, or later collection of Luna reports. Distinguish launch-only requests from requests to wait, collect, or synthesise. For 16 or more lanes, invoke the direct launcher instead of native spawn_agent.
 ---
 
 # Codex Luna Swarm
 
 Launch one independent Luna worker per bounded task. Keep orchestration in the main session and
-return concise lane reports without filling the main context with intermediate work.
+keep preparation smaller than the work delegated to the lanes.
 
 ## Check required inputs first
 
-Before browsing, installation, repository inspection, or lane planning, resolve every packet,
-attachment, and user-supplied path named in the current message. If a required input is absent,
-ask for it immediately and stop. Do not search earlier tasks, substitute a similarly named file,
-or perform setup while waiting. Missing work is not a reason to weaken the requested lane count or
-brief quality.
+Resolve every packet, attachment, and user-supplied path named in the current message before
+browsing, installation, repository inspection, or lane planning. If a required input is absent,
+ask for it immediately and stop. Do not search earlier tasks, substitute a similar file, or perform
+setup while waiting.
 
-## Act on a launch request
+## Interpret the requested terminal
 
-After the required-input check passes, start the launch in the same turn as the request. Do not
-stop after saying that the lanes will be launched. Read a shared instruction packet once, resolve
-its path once, and pass it to the launcher. Another skill may define the investigation questions,
-but this skill owns execution and must be used first.
+- **Launch, start, or spawn:** accept every lane and return the launch receipt. Do not wait for
+  reports unless the user also asks to wait, collect, review, or summarise.
+- **Wait, collect, review, or summarise:** remain active through terminal, drain the reports, and
+  return the requested synthesis.
+- Treat the verb “launch” by itself as launch-only. Do not ask a clarifying question merely to add
+  collection work.
 
-Route by count:
+Use precise states:
+
+- `preparing` while resolving inputs, defining lanes, and checking transport;
+- `launched` only after all native calls are accepted or the fallback emits
+  `luna_lanes.started`;
+- `collecting` only when the user requested report collection.
+
+Do not say “launching” when only preparing a task file.
+
+## Route by count
 
 - For 1-15 lanes, prefer native `luna_worker` agents.
-- For 16 or more lanes, skip native spawning. Write one distinct task description per lane, then
-  use the direct launcher with `--tasks-file`.
+- For 16 or more lanes, use the direct launcher with `--tasks-file`.
 - The direct launcher has no lane-count ceiling. Do not split one concurrency request into batches.
 
-## Define the lanes
+When native Luna availability is uncertain, attempt one prepared lane. If the active catalogue
+rejects `luna_worker`, report that once and launch the complete set through the fallback. Do not try
+the same rejected native call for every lane and never substitute Sol or Terra.
 
-1. Respect the exact lane count named by the user.
-2. Give every lane one concrete owned angle, a unique lowercase underscore name, exact paths or
-   revision, its authority, observed facts, the reason the angle matters, and the required output.
-3. Put genuinely common evidence and output rules in one shared instruction packet. Do not use the
-   common packet as a substitute for explaining each lane's substantive scope.
-4. Default to read-only. A write lane must own explicit paths or responsibility and must be told
-   that other agents may be editing the repository.
-5. Do not use a coordinator that creates more agents. Do not let a lane create another lane.
+## Define bounded lanes
 
-For a many-lane investigation, the main agent writes an exhaustive, self-contained explanation for
-each lane. A supplied list of questions is seed material, not a ready task file. Each explanation
-must include:
+Read shared material once. Put the common revision, evidence rules, safety constraints, and output
+shape in one instruction packet. A lane row then needs only:
 
-- the owned review angle, its boundary, and why it matters;
-- the exact state or revision and the principal paths or producer -> projection -> consumer ->
-  decision flows where inspection should begin;
-- the minimum questions to settle, while saying they are not a ceiling on material findings inside
-  the owned angle;
-- a requirement to develop and test at least three plausible hypotheses, including an innocent or
-  intentional explanation, rather than confirming a suggested defect;
-- the expected source census: entry points, callers, tests, runtime or receipt paths, and relevant
-  history where available;
-- permission to report a material adjacent defect inside the owned angle, with enough evidence to
-  distinguish it from duplication with another lane;
-- the correction and proof contract: propose the smallest correction only for a proved defect,
-  include a hostile or negative test, and state remaining uncertainty; and
-- when Skills are relevant, a requirement that the lane itself selects and reads one to three of
-  them before investigation. Do not assign the same generic Skills to every lane merely to satisfy
-  a count.
+- a unique lowercase underscore name;
+- one owned question or architecture slice and its boundary;
+- the principal path, entry point, or producer -> consumer flow where inspection starts;
+- read-only or explicit write authority; and
+- the required report or patch outcome.
 
-Exhaustive briefing does not prescribe a verdict. The Luna agent still owns its hypotheses,
-evidence search, and conclusion. Do not encode a preferred finding in the task.
+For a broad request such as “investigate this repo”, inspect the top-level structure once and divide
+the named count into orthogonal architecture or risk slices. Do not invent a suspected defect for
+every lane and do not perform the investigation in the parent before launch.
 
-Before launch, inspect the complete task file and regenerate weak rows. Reject a row when it is only
-a title, attachment line range, restated yes/no question, or file name; when it could be completed
-by inspecting one file; or when changing the lane number would make it equivalent to another row.
-Confirm that every row has its own angle, starting flows, hypothesis requirement, source-census
-requirement, adjacency allowance, Skill-selection rule when applicable, and proof contract.
+For a causal or defect investigation, also require the lane to test at least three plausible
+hypotheses when evidence suggests a mismatch, including an innocent or intentional explanation;
+census the relevant callers and tests; and propose a correction only for a proved defect. Do not
+force repository history, receipts, every package, or a hostile test into a lane when its question
+does not need them.
 
-For investigation, treat lane reports as research. Verify any finding that changes a decision
-against source or receipts in the main session.
+If repository instructions make Skills relevant, ask the lane to select and read one to three.
+Do not assign the same generic Skills to every lane only to satisfy a count.
 
-## Use native Luna agents for 1-15 lanes
+Make each brief exhaustive inside its owned angle, not expansive across the repository. A title,
+line range, generic “review this”, or duplicate numbered prompt is too weak. Validate the task file
+by JSON shape, exact count, unique names, distinct scopes, starting points, authority, and outcome.
+Accept equivalent wording; do not build a phrase linter.
 
-For 1-15 lanes, call `spawn_agent` once per lane in one main-agent message with:
+Default to read-only. A write lane must own explicit paths or responsibility and must be told that
+other agents may be editing the repository. Do not use a coordinator and do not let lanes spawn
+more lanes. Treat reports as research; verify any load-bearing finding in the main session.
+
+## Use native Luna for 1-15 lanes
+
+Call `spawn_agent` with:
 
 - `agent_type: "luna_worker"`;
 - a unique underscore `task_name`;
-- `fork_turns: "none"` when the message carries the complete packet;
-- the bounded lane assignment in `message`.
+- `fork_turns: "none"` when the message contains the complete evidence packet; and
+- the bounded assignment in `message`.
 
-Do not pass `model` or `reasoning_effort`; the installed project custom agent owns
-`gpt-5.6-luna` and `max`. Do not wrap Luna in a Sol or Terra agent and do not substitute another
-agent when Luna is unavailable.
-
-Use the deterministic launcher for 1-15 lanes only when native `luna_worker` is rejected by the
-active model catalogue. Report the rejection once and do not retry an unchanged error.
+Do not pass `model` or `reasoning_effort`; the project custom agent owns `gpt-5.6-luna` and `max`.
+After the first native lane is accepted, submit the remaining prepared lanes without waiting for
+that lane to finish. For launch-only work, return the accepted task IDs and stop.
 
 ## Use the fallback launcher
 
-Resolve `scripts/luna-lanes.cjs` relative to this `SKILL.md`. Do not read, copy, or reimplement the
-launcher in the main session. It starts one independent `codex exec` process per lane, pins
-`gpt-5.6-luna` with `max` reasoning and priority service, sends prompts over stdin without a shell,
-and writes per-lane receipts.
+Resolve `scripts/luna-lanes.cjs` relative to this `SKILL.md`. Do not read, copy, or reimplement it in
+the main session. It starts one independent `codex exec` process per lane, pins `gpt-5.6-luna`, max
+reasoning, and priority service, sends prompts over stdin without a shell, and writes per-lane
+receipts.
 
-For a read-only investigation, write a compact JSON task file. The main agent owns these
-descriptions; the shared packet owns only common evidence, constraints, and output shape.
+Use the current `node` when it satisfies the target repository and package requirements. Do not
+assume `nvm`, `fnm`, or a manager path. Only when a switch is required, inspect the repository's
+runtime files and discover the available manager with `type -a`; select the runtime in the same
+shell call as the launcher. Do not run upstream test suites before an ordinary launch.
+
+For a read-only investigation, write a compact JSON task file:
 
 ```json
 [
   {
     "name": "receipts",
-    "task": "Own receipt identity from creation through projection and final decision. Begin at the receipt constructors, every public projection, their consumers, the sealed runtime records, relevant tests, and recent history. Establish at least three competing explanations for any mismatch, including an intentional representation difference, and try to falsify each. The named identity questions are a minimum, not a ceiling: report material adjacent binding defects within this angle. Cite exact paths and commands. Propose the smallest owner-level correction only for a proved defect, with a hostile test and remaining uncertainty. Select and read one to three relevant repository Skills before investigating."
+    "task": "Own receipt identity from construction through its deciding consumer. Start at the receipt constructor and public projection. Report confirmed mismatches, innocent explanations, exact evidence, and the smallest proved correction."
   },
   {
     "name": "runtime",
-    "task": "Own runtime failure classification from process result through non-result typing, denominators, receipts, and downstream promotion decisions. Census entry points, callers, tests, observed runtime records, and relevant history. Form and test at least three hypotheses, including correct intentional classification. Follow material adjacent defects inside this boundary even when the starting questions omit them. Cite exact evidence and commands. For a proved defect only, propose the smallest correction plus a negative case and say what remains unproved. Select and read one to three relevant repository Skills before investigating."
+    "task": "Own runtime failure classification through non-result typing and denominators. Start at process result handling and its receipt consumer. Report confirmed defects, competing explanations, and remaining uncertainty."
   }
 ]
 ```
 
-Launch every described lane with one command:
+For a launch-only request, add `--launch-only`:
 
 ```sh
 node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
   --tasks-file /absolute/luna-tasks.json \
   --workdir /absolute/worktree \
-  --instructions-file /absolute/shared-instructions.md
+  --instructions-file /absolute/shared-instructions.md \
+  --max-active 12 \
+  --start-interval-ms 1000 \
+  --launch-only
 ```
 
-Each task row may be a `{ "name", "task" }` object or a task string, in which case the launcher
-assigns a numbered name. Investigation rows should use named objects so the main agent can inspect
-their independence before launch. Keep each task bounded but fully briefed. The tasks-file form is
-read-only; use a manifest for write lanes or per-lane worktrees.
+Omit `--launch-only` when the user asked this task to collect reports. The first stdout event is
+`luna_lanes.started`; only then report the output directory, exact count, model, reasoning effort,
+service tier, runtime, active count, and pace as launched.
 
-The launcher starts nested Codex CLI processes and therefore needs access to the active Codex state
-directory. If the main session's shell tool is sandboxed, request one escalation for the launcher
-command before starting it. This does not loosen the lane sandboxes: each read-only lane still
-receives `--sandbox read-only`.
+`--max-active N` queues excess work in the same launch. Lanes start one second apart by default;
+`--start-interval-ms N` makes the pace explicit. After a typed HTTP 429 non-result, reduce the
+active count or pace and retry only missing lanes after the current launcher settles.
 
-`--max-active N` queues excess work in the same launch. Lanes use a one-second start interval by
-default; `--start-interval-ms N` overrides it. After a typed HTTP 429 rate-limit non-result, reduce
-the active count or pace and retry only missing lanes once the current launcher settles.
+The launcher needs access to active Codex state. If the parent shell is sandboxed, request access
+once for the launcher command; individual read-only lane sandboxes remain read-only.
 
-Each result produces one compact `luna_lane.finished` stdout event. Monitor those events and use
-`--drain` for full reports; `luna_lanes.completed` and `summary.json` give the terminal counts. The
-installed repo-local `Stop` hook keeps only its parent task active and wakes it once after terminal
-or crash. Trust a new or changed project hook once through `/hooks`; child lanes and other task IDs
-are excluded.
+Use `--count N` only for a genuine concurrency test or when the shared packet maps each rank to a
+distinct assignment. Investigations normally use named task objects.
 
-Use `--count N` only for a genuine concurrency test or when the shared packet itself maps each
-investigator number to a distinct assignment. It creates `luna_01` through `luna_N`; an optional
-`--task-template` may use `{i}` and `{count}`. Do not use generic numbered prompts when the main
-agent can state the distinct questions.
-
-Create a compact JSON manifest:
+Use a manifest for write lanes or per-lane worktrees:
 
 ```json
 {
   "workdir": "/absolute/worktree",
   "instructionsFile": "/absolute/shared-instructions.md",
   "lanes": [
-    { "name": "luna_receipts", "task": "Audit the receipt binding and return finding rows." },
-    { "name": "luna_tests", "task": "Find the hostile test gap and cite exact files." }
+    { "name": "tests", "task": "Implement the named hostile test.", "sandbox": "workspace-write", "ownedPaths": ["test/"] }
   ]
 }
 ```
 
-The top-level worktree and sandbox apply to every lane unless overridden. `sandbox` defaults to
-`read-only`. A `workspace-write` lane must declare non-empty `ownedPaths`. The legacy per-lane
-`prompt` and `workdir` form remains accepted.
+A manifest contains one or more lanes. The top-level worktree and sandbox apply to every lane
+unless overridden; a `workspace-write` lane requires non-empty `ownedPaths`.
 
-A manifest contains one or more lanes. A larger count needs no extra flag.
+## Collect only when requested
 
-Launch once:
+Without `--launch-only`, the repo-local Stop hook keeps the parent task active while its launcher
+runs and wakes it once after terminal or crash. Child lanes and other task IDs are excluded. Trust
+a new or changed project hook once through `/hooks`.
 
-```sh
-node /absolute/skill/path/scripts/luna-lanes.cjs \
-  --manifest /absolute/luna-lanes.json
-```
-
-The first output line names `outputDir` immediately. While the launcher is running, print only newly
-finished reports with:
+Each completion prints one compact `luna_lane.finished` event. Print every newly finished report
+once with:
 
 ```sh
-node /absolute/skill/path/scripts/luna-lanes.cjs --drain /absolute/outputDir
+node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs --drain /absolute/outputDir
 ```
 
-The drain cursor advances only after stdout succeeds. Repeating the same command is silent until a
-new lane finishes. Call it once more after the launcher exits. Do not replace this with `find`,
-`ps`, report globs, or one-file-at-a-time reads.
+Call `--drain` again after `luna_lanes.completed`. Then read `summary.json`, require one result per
+requested lane, and report non-zero lanes as missing work. Keep transport warnings separate from
+lane failure; a WebSocket-to-HTTPS fallback may still complete successfully.
 
-## Settle the result
-
-Read `summary.json` after terminal. Require one result per requested lane and report non-zero lanes
-as missing work. `reports.md` is the full combined archive; each lane also has a report, JSONL event
-log, stderr log, result record, thread ID, and timing.
-
-The launch configuration proves what was requested, not what the remote session actually bound.
-When identity is load-bearing, check each thread rollout under `~/.codex/sessions/` for model,
-effort, and sandbox. Keep transport fallback warnings separate from lane failure: a WebSocket to
-HTTPS fallback may still end in a valid completed lane.
-
-Return the requested synthesis, exact completed/failed counts, and any operational non-results.
+The start receipt proves requested configuration, not the model actually bound by a remote
+session. When identity is load-bearing, verify the session records before making the claim. Return
+exact completed and failed counts plus any operational non-results.

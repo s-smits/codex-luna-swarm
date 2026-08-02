@@ -63,35 +63,43 @@ Native `luna_worker` agents are preferred. If the active model catalogue rejects
 skill uses its deterministic `codex exec` fallback without substituting another model. Native work
 uses up to 15 lanes; larger requests use the direct launcher, which has no lane-count ceiling.
 
+“Launch” alone ends at the accepted start receipt. Add “wait and summarise” when the same task
+should collect the reports. The main agent should say `preparing` until native calls are accepted or
+the fallback emits `luna_lanes.started`; only then are the lanes `launched`.
+
 For a shared packet and 50 distinct investigators, first write a JSON array containing one
-substantive `{ "name", "task" }` brief per investigator. Shared facts belong in the common packet,
-but each task must still explain its owned angle, starting evidence, expected depth, independent
-hypothesis work, permitted adjacent findings, and report contract. A title or attachment line range
-is not a task brief. Then use one current-task command:
+substantive `{ "name", "task" }` brief per investigator. Shared facts belong in the common packet;
+each task needs a distinct owned angle, starting point, authority, and outcome. Add competing
+hypotheses and source census only for causal or defect questions. A title or line range is not a
+task brief. For launch-only work, use:
 
 ```sh
 node .agents/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
   --tasks-file /absolute/luna-tasks.json \
   --workdir /absolute/current/git/root \
-  --instructions-file /absolute/shared-instructions.md
+  --instructions-file /absolute/shared-instructions.md \
+  --max-active 50 \
+  --start-interval-ms 1000 \
+  --launch-only
 ```
 
 `--count 50` is reserved for an explicit rank-based concurrency test. Investigations should use
-the main agent's distinct task descriptions. Before launch, the main agent should reject any row
-that could be completed by answering one narrow question or inspecting one file.
+the main agent's distinct task descriptions. Validate semantic scope and JSON structure, not exact
+phrases. Omit `--launch-only` when this task should wait and collect.
 
 `--max-active` queues excess work in one launch. Lanes start one second apart by default;
 `--start-interval-ms` overrides that pace. A typed HTTP 429 result means reducing the active count
 or pace and retrying only missing work after the launcher settles.
 
 Each lane prints one compact `luna_lane.finished` event; full reports remain behind `--drain`.
-`luna_lanes.completed` gives terminal counts. The installed `Stop` hook keeps the parent task active
-while its launcher runs and wakes it once after terminal or crash. Child lanes and other tasks are
-excluded.
+`luna_lanes.completed` gives terminal counts. Without `--launch-only`, the installed `Stop` hook
+keeps the parent task active and wakes it once after terminal or crash. Launch-only work returns the
+start receipt and leaves collection to a later request. Child lanes and other tasks are excluded.
 
 The launcher needs access to the active Codex state directory because it starts nested Codex CLI
 processes. If the main shell tool is sandboxed, grant the launcher command that access once; the
-individual lane sandboxes remain read-only.
+individual lane sandboxes remain read-only. Use the current compatible `node`; never assume an
+`nvm` or `fnm` path merely because a repository has a runtime file.
 
 The fallback's `--drain` command prints each newly finished report once. The main agent does not
 need to read or reproduce the launcher.

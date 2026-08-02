@@ -44,16 +44,17 @@ if (!fields.get("description") || fields.get("description").length < 40) {
 }
 if (/\bTODO\b/.test(text)) throw new Error("SKILL.md still contains TODO text");
 for (const expected of [
-  "exhaustive, self-contained explanation",
-  "at least three plausible hypotheses",
-  "source census",
-  "not a ceiling",
-  "current message",
-  "one-second start interval",
-  "luna_lane.finished",
-  "--max-active",
+  "## Check required inputs first",
+  "## Interpret the requested terminal",
+  "## Define bounded lanes",
+  "## Use native Luna for 1-15 lanes",
+  "## Use the fallback launcher",
+  "## Collect only when requested",
+  "`luna_lanes.started`",
+  "--launch-only",
+  "do not build a phrase linter",
 ]) {
-  if (!text.includes(expected)) throw new Error(`SKILL.md is missing lane-quality rule: ${expected}`);
+  if (!text.includes(expected)) throw new Error(`SKILL.md is missing required guidance: ${expected}`);
 }
 
 const metadata = readFileSync(metadataFile, "utf8");
@@ -61,7 +62,7 @@ for (const expected of [
   'display_name: "Codex Luna Swarm"',
   "short_description:",
   'default_prompt: "Use $codex-luna-swarm',
-  "verify the named inputs",
+  "launch receipt",
 ]) {
   if (!metadata.includes(expected)) throw new Error(`openai.yaml is missing ${expected}`);
 }

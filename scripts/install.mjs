@@ -119,19 +119,12 @@ function filesUnder(root) {
 }
 
 function equalTrees(left, right) {
-  const first = filesUnder(left);
-  const second = filesUnder(right);
+  const [first, second] = [filesUnder(left), filesUnder(right)];
   return first !== null && second !== null && JSON.stringify(first) === JSON.stringify(second);
 }
 
 function sameFile(left, right) {
-  return (
-    existsSync(left) &&
-    existsSync(right) &&
-    lstatSync(left).isFile() &&
-    lstatSync(right).isFile() &&
-    sha256(left) === sha256(right)
-  );
+  return [left, right].every((path) => existsSync(path) && lstatSync(path).isFile()) && sha256(left) === sha256(right);
 }
 
 function markerRange(text, { start = START_MARKER, end = END_MARKER, label = "AGENTS.md" } = {}) {

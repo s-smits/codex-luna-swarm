@@ -62,12 +62,10 @@ function parseArgs(argv) {
   const parsed = { ephemeral: false, stress: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--ephemeral") {
-      if (parsed.ephemeral) throw new Error("Duplicate argument: --ephemeral");
-      parsed.ephemeral = true;
-    } else if (arg === "--stress") {
-      if (parsed.stress) throw new Error("Duplicate argument: --stress");
-      parsed.stress = true;
+    if (["--ephemeral", "--stress", "--stop-hook"].includes(arg)) {
+      const key = arg.slice(2).replaceAll("-", "_");
+      if (parsed[key]) throw new Error(`Duplicate argument: ${arg}`);
+      parsed[key] = true;
     } else if (arg === "--help") {
       parsed.help = true;
     } else if (
@@ -211,15 +209,9 @@ function absoluteExistingFile(value, field) {
   return actual;
 }
 
-function optionalText(value, field) {
-  if (value === undefined) return "";
-  if (typeof value !== "string") throw new Error(`${field} must be a string`);
-  return value.trim();
-}
-
 function sharedInstructions(raw) {
   if (Array.isArray(raw) || !raw || typeof raw !== "object") return "";
-  const inline = optionalText(raw.instructions, "instructions");
+  if (raw.instructions !== undefined && typeof raw.instructions !== "string") throw new Error("instructions must be a string");
   let fromFile = "";
   if (raw.instructionsFile !== undefined) {
     if (typeof raw.instructionsFile !== "string") {
@@ -231,7 +223,7 @@ function sharedInstructions(raw) {
     }
     fromFile = readFileSync(path, "utf8").trim();
   }
-  return [fromFile, inline].filter(Boolean).join("\n\n");
+  return [fromFile, raw.instructions?.trim()].filter(Boolean).join("\n\n");
 }
 
 function normalizeManifest(raw) {
@@ -396,8 +388,7 @@ function atomicJson(path, value, replace = false) {
   }
 }
 
-function launchRegistryPath() {
-  const threadId = process.env.CODEX_THREAD_ID;
+function launchRegistryPath(threadId = process.env.CODEX_THREAD_ID) {
   if (typeof threadId !== "string" || !/^[a-zA-Z0-9_-]{8,128}$/.test(threadId)) return null;
   const directory = join(tmpdir(), "codex-luna-swarm");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -449,11 +440,6 @@ function threadIdFromEvents(path) {
     }
   }
   return null;
-}
-
-function failureKind(...paths) {
-  const diagnostic = paths.filter(regularFileExists).map((path) => readFileSync(path, "utf8")).join("\n");
-  return /(?:\b429\b|too many requests|rate.?limit)/i.test(diagnostic) ? "rate-limit" : null;
 }
 
 async function runLane(lane, options) {
@@ -523,7 +509,9 @@ async function runLane(lane, options) {
   });
   const reportExists = regularFileExists(reportPath);
   const completed = completion.exitCode === 0 && reportExists;
-  const classifiedFailure = completed ? null : failureKind(stderrPath, eventPath);
+  const classifiedFailure = !completed && /(?:\b429\b|too many requests|rate.?limit)/i.test(
+    [stderrPath, eventPath].filter(regularFileExists).map((path) => readFileSync(path, "utf8")).join("\n"),
+  ) ? "rate-limit" : null;
   return {
     name: lane.name,
     status: completed ? "completed" : "failed",
@@ -589,13 +577,6 @@ function reportSection(result) {
     .join("\n");
 }
 
-function writeCollectedReports(outputDir, results) {
-  const path = join(outputDir, "reports.md");
-  const text = ["# Luna lane reports", "", ...results.map(reportSection)].join("\n");
-  writeFileSync(path, `${text.trimEnd()}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
-  return path;
-}
-
 async function runLunaLanes(rawManifest, options = {}) {
   const lanes = normalizeManifest(rawManifest);
   validateLauncherRuntime(lanes);
@@ -653,7 +634,9 @@ async function runLunaLanes(rawManifest, options = {}) {
       return result;
     },
   );
-  const reportsPath = writeCollectedReports(outputDir, results);
+  const reportsPath = join(outputDir, "reports.md");
+  const reports = ["# Luna lane reports", "", ...results.map(reportSection)].join("\n");
+  writeFileSync(reportsPath, `${reports.trimEnd()}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
   const summary = {
     schemaVersion: LAUNCH_SCHEMA_VERSION,
     type: "luna_lanes.completed",
@@ -722,6 +705,35 @@ function processIsAlive(pid) {
   } catch (error) {
     return error?.code !== "ESRCH";
   }
+}
+
+function stopHook() {
+  if (process.env.CODEX_LUNA_LANE === "1") return {};
+  const block = (reason) => ({ decision: "block", reason });
+  let input;
+  try {
+    input = JSON.parse(readFileSync(0, "utf8"));
+  } catch {
+    return {};
+  }
+  const path = launchRegistryPath(input?.session_id);
+  if (!path || !regularFileExists(path) || lstatSync(path).isSymbolicLink()) return {};
+  let record;
+  try {
+    record = readJson(path, "Luna launch registry");
+  } catch {
+    unlinkSync(path);
+    return block("The Luna launcher registry is unreadable. Inspect its terminal.");
+  }
+  if (record.threadId !== input.session_id || typeof record.outputDir !== "string") return {};
+  const terminal = regularFileExists(join(record.outputDir, "summary.json"));
+  if (!terminal && processIsAlive(record.pid)) {
+    return block(`The Luna launcher is active at ${record.outputDir}. Poll it, follow luna_lane.finished events, and drain reports before ending.`);
+  }
+  unlinkSync(path);
+  return block(terminal
+    ? `The Luna launcher finished at ${record.outputDir}. Drain and settle it.`
+    : `The Luna launcher stopped unexpectedly at ${record.outputDir}. Inspect its terminal and missing lanes.`);
 }
 
 function acquireDrainLock(outputDir) {
@@ -844,6 +856,10 @@ function writeStdout(value) {
 
 async function main(argv) {
   const options = parseArgs(argv);
+  if (options.stop_hook) {
+    process.stdout.write(`${JSON.stringify(stopHook())}\n`);
+    return 0;
+  }
   if (options.help) {
     process.stdout.write(`${usage()}\n`);
     return 0;

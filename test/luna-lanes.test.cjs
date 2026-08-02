@@ -17,10 +17,11 @@ function scratch() {
   return root;
 }
 
-function runCli(args, env = {}) {
+function runCli(args, env = {}, input) {
   return spawnSync(process.execPath, [launcherPath, ...args], {
     encoding: "utf8",
     env: { ...process.env, CODEX_THREAD_ID: "", ...env },
+    input,
   });
 }
 
@@ -372,4 +373,32 @@ test("CLI announces the output directory and drains each report once", () => {
   const secondDrain = runCli(["--drain", outputDir]);
   assert.equal(secondDrain.status, 0, secondDrain.stderr);
   assert.equal(secondDrain.stdout, "");
+});
+
+test("Stop hook continues only the parent and wakes it after terminal or crash", () => {
+  const root = scratch();
+  const registry = join(tmpdir(), "codex-luna-swarm");
+  mkdirSync(registry, { recursive: true, mode: 0o700 });
+  const invoke = (terminal = false, pid = process.pid, env = {}) => {
+    const id = `test_hook_${process.pid}_${Math.random().toString(16).slice(2)}`;
+    const path = join(registry, `${id}.json`);
+    const outputDir = join(root, id);
+    mkdirSync(outputDir);
+    if (terminal) writeFileSync(join(outputDir, "summary.json"), "{}");
+    writeFileSync(path, JSON.stringify({ threadId: id, pid, outputDir }));
+    const result = runCli(["--stop-hook"], env, JSON.stringify({ session_id: id }));
+    assert.equal(result.status, 0, result.stderr);
+    return { path, result: JSON.parse(result.stdout) };
+  };
+  const active = invoke();
+  assert.match(active.result.reason, /is active/);
+  const child = runCli(["--stop-hook"], { CODEX_LUNA_LANE: "1" }, "{}");
+  assert.deepEqual(JSON.parse(child.stdout), {});
+  rmSync(active.path, { force: true });
+  const terminal = invoke(true);
+  assert.match(terminal.result.reason, /finished/);
+  assert.equal(existsSync(terminal.path), false);
+  const crashed = invoke(false, 999_999_999);
+  assert.match(crashed.result.reason, /stopped unexpectedly/);
+  assert.equal(existsSync(crashed.path), false);
 });

@@ -1,68 +1,69 @@
 # Codex Luna Swarm
 
-You are an implementation agent. Install a repo-scoped Codex skill that launches and collects
-independent `gpt-5.6-luna` workers without substituting another model.
+A repo-scoped Codex skill for launching and collecting independent `gpt-5.6-luna` workers.
 
-Your first reply must contain exactly this question and nothing else:
+While Codex is working in the repository that should receive the skill, give it this repository
+URL:
 
-> Which Git repository should receive the Codex Luna Swarm skill?
-
-Wait for the answer before inspecting or changing the target repository.
-
-## Required result
-
-Install these three pieces in the selected Git root:
-
-- `.agents/skills/codex-luna-swarm/` for the reusable workflow and deterministic fallback launcher;
-- `.codex/agents/luna_worker.toml` for native Luna/max spawning;
-- one small managed block in the root `AGENTS.md` that tells Codex when to invoke the skill.
-
-The target repository owns the installed files. Do not change global Codex configuration. Do not
-copy environment files or configuration from another repository.
-
-## Inspect before installation
-
-Resolve the target with `git rev-parse --show-toplevel`, read its current `AGENTS.md` chain, and
-show `git status --short`. Preserve unrelated changes. Check whether either managed destination
-already exists. If an existing custom `luna_worker`, skill, or marked AGENTS block differs, show
-the conflict and ask before replacing it.
-
-Run the installer from this repository:
-
-```sh
-node scripts/install.mjs --target /absolute/path/to/target
+```text
+Install https://github.com/s-smits/codex-luna-swarm in this repository.
 ```
 
-Use `--force` only after establishing that the existing destination belongs to an earlier
-Codex Luna Swarm installation and may be replaced. The installer updates only its skill directory,
-its custom-agent file, and its marked AGENTS block.
+Codex should treat its current Git root as the target. It only needs another path when the current
+directory is not the intended repository.
 
-Verify the installed copy:
+## What is installed
 
-```sh
-node scripts/install.mjs --target /absolute/path/to/target --check
-```
+- `.agents/skills/codex-luna-swarm/` — the workflow and fallback launcher;
+- `.codex/agents/luna_worker.toml` — the native Luna/max agent definition;
+- a small managed block in the target repository's root `AGENTS.md`.
 
-Then inspect the target diff and start a new Codex task in that repository so skill and custom-agent
-discovery rebuilds. A useful first request is:
+Nothing is added to global Codex configuration.
+
+## Installation
+
+For the Codex agent handling the request:
+
+1. Resolve the current Git root and inspect its `AGENTS.md` instructions and `git status --short`.
+2. Obtain this repository outside the target worktree.
+3. Check for an existing Luna skill, `luna_worker` definition, or managed AGENTS block. Preserve
+   unrelated changes and ask before replacing a differing installation.
+4. Run:
+
+   ```sh
+   node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root
+   node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root --check
+   ```
+
+5. Show the target diff. Start a new Codex task in that repository so skill and custom-agent
+   discovery rebuilds.
+
+Use `--force` only after reviewing an existing managed installation. The installer changes only
+the skill directory, custom-agent file, and marked AGENTS block. It does not copy environment
+files or configuration from another repository.
+
+## Use
+
+For example:
 
 ```text
 Launch 3 Luna agents: one to inspect tests, one to inspect error handling, and one to inspect docs.
 Wait for all three and summarize their evidence.
 ```
 
-Normal work is capped at 15 lanes. Counts from 16 through 50 require an explicit user request and
-the skill's stress manifest. The fallback never turns a requested concurrent run into sequential
-batches.
+Native `luna_worker` agents are preferred. If the active model catalogue rejects that agent, the
+skill uses its deterministic `codex exec` fallback without substituting another model. Normal work
+is capped at 15 lanes. An explicit request for 16-50 concurrent lanes enables stress mode.
 
-## Removal
+The fallback's `--drain` command prints each newly finished report once. The main agent does not
+need to read or reproduce the launcher.
 
-Show the target diff first, then run:
+## Check or remove
 
 ```sh
-node scripts/install.mjs --target /absolute/path/to/target --remove
+node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root --check
+node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root --remove
 ```
 
-Removal refuses to delete a modified installed skill, custom-agent file, or managed AGENTS block
-unless `--force` is explicit. Report every removed path and leave unrelated AGENTS content
-unchanged.
+Removal preserves unrelated `AGENTS.md` content. It refuses to delete modified managed files or a
+modified managed block unless `--force` is explicit.

@@ -18,6 +18,7 @@ directory is not the intended repository.
 
 - `.agents/skills/codex-luna-swarm/` — the workflow and fallback launcher;
 - `.codex/agents/luna_worker.toml` — the native Luna/max agent definition;
+- a small managed `Stop` hook block in `.codex/config.toml`;
 - a small managed block in the target repository's root `AGENTS.md`.
 
 Nothing is added to global Codex configuration.
@@ -37,14 +38,16 @@ For the Codex agent handling the request:
    node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root --check
    ```
 
-5. Show the target diff. A new Codex task will discover the installed Skill and custom agent.
+5. Show the target diff. Review and trust the project hook once through Codex `/hooks`; Codex skips
+   changed project hooks until they are trusted. A new Codex task will discover the installed Skill,
+   custom agent, and hook.
 
 If the user also requested a launch, continue in the current task. Do not wait for Skill discovery:
 invoke the launcher from the obtained copy of this repository.
 
 Use `--force` only after reviewing an existing managed installation. The installer changes only
-the skill directory, custom-agent file, and marked AGENTS block. It does not copy environment
-files or configuration from another repository.
+the skill directory, custom-agent file, and its marked blocks in `AGENTS.md` and
+`.codex/config.toml`. It does not copy environment files or configuration from another repository.
 
 ## Use
 
@@ -77,9 +80,29 @@ node /path/to/codex-luna-swarm/skills/codex-luna-swarm/scripts/luna-lanes.cjs \
 the main agent's distinct task descriptions. Before launch, the main agent should reject any row
 that could be completed by answering one narrow question or inspecting one file.
 
+`--max-active` is optional. It keeps the complete task set in one launch and queues excess work
+behind the chosen active-lane cap. Stress task files start lanes one second apart by default to
+avoid an instantaneous service burst; `--start-interval-ms` may set a different explicit interval.
+If a run receives HTTP 429 or another typed rate-limit non-result, lower the active cap or increase
+the start interval and retry only the missing work.
+
+The launch process prints one compact `luna_lane.finished` JSON event as soon as a lane completes,
+fails, or cannot spawn. Full report text remains behind `--drain`, so completion signals do not fill
+the main context. At terminal the launcher prints one compact `luna_lanes.completed` event with
+completed, failed, and rate-limited counts plus the archive paths. The installed Codex `Stop` hook
+keeps the parent turn active while its registered launcher is alive. When the launcher finishes or
+crashes, the hook creates one continuation prompt that directs the main agent to drain and settle
+the run. The hook ignores Luna lane sessions themselves and other Codex task IDs.
+
 The launcher needs access to the active Codex state directory because it starts nested Codex CLI
 processes. If the main shell tool is sandboxed, grant the launcher command that access once; the
 individual lane sandboxes remain read-only.
+
+The launcher records its Node executable and isolates user zsh startup files for every lane while
+preserving the verified parent environment. When a worktree has an exact `.nvmrc`, the launcher
+refuses before spawning any lane unless its own Node version matches. Invoke the launcher in the
+same shell command that selects the repository's Node version; a version-manager change made in an
+earlier shell-tool call does not persist automatically.
 
 The fallback's `--drain` command prints each newly finished report once. The main agent does not
 need to read or reproduce the launcher.
@@ -91,5 +114,5 @@ node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/gi
 node /path/to/codex-luna-swarm/scripts/install.mjs --target /absolute/current/git/root --remove
 ```
 
-Removal preserves unrelated `AGENTS.md` content. It refuses to delete modified managed files or a
-modified managed block unless `--force` is explicit.
+Removal preserves unrelated `AGENTS.md` and `.codex/config.toml` content. It refuses to delete
+modified managed files or a modified managed block unless `--force` is explicit.

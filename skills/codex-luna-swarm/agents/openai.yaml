@@ -1,4 +1,4 @@
 interface:
   display_name: "Codex Luna Swarm"
   short_description: "Launch and collect independent Luna lanes"
-  default_prompt: "Use $codex-luna-swarm to launch the requested Luna lanes now with an exhaustive, self-contained explanation for each distinct investigation angle, then collect their independent reports."
+  default_prompt: "Use $codex-luna-swarm to launch the requested Luna lanes now with an exhaustive, self-contained explanation for each distinct investigation angle, remain active through the terminal event, then collect their independent reports."

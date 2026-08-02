@@ -2,25 +2,18 @@
 
 A repo-scoped Codex skill for launching and collecting independent `gpt-5.6-luna` workers.
 
-While Codex is working in the repository that should receive the skill, give it this repository
-URL together with the work to run:
+While Codex is working in the repository that should receive the skill, install it first with this
+request:
 
 ```text
-Use https://github.com/s-smits/codex-luna-swarm in this repository and launch 50 independent Luna
-investigators. If this message includes a shared instruction packet, use it as common evidence and
-as a set of starting points. If it does not, inspect the repository and create the shared context
-yourself; do not stop to ask for an attachment. Before launch, write exactly 50 distinct,
-self-contained briefs, each exhaustive within one bounded angle and each naming its scope, starting
-points, authority, evidence requirements, self-check, and required output. Expand supplied
-questions where repository evidence warrants it instead of treating them as the complete scope.
-Ask every lane to report proved findings and the smallest credible correction. Keep lanes read-only
-unless they have explicit, isolated write ownership. Make reasonable assumptions and complete both
-preparation and accepted transport in this turn. Do not stop after presenting a plan, task list, or
-command, and do not ask for approval unless I explicitly request a preview.
+Set up https://github.com/s-smits/codex-luna-swarm in this repository. Install or update its
+repository-scoped skill, Luna agent definition, managed AGENTS.md guidance, and Stop hook. Preserve
+all existing content outside its managed paths and blocks. Run the installer integrity check and
+show what changed. Do not prepare or launch Luna agents in this turn.
 ```
 
-For a complete investigate-and-fix pass, append: “Wait for every report, verify the load-bearing
-findings, implement the confirmed fixes in the main session, run the relevant tests, and summarise.”
+After setup, start the actual Luna work in a new Codex task. The new task discovers the installed
+skill, custom agent, hook, and repository guidance before it plans any lanes.
 
 Codex should treat its current Git root as the target. It only needs another path when the current
 directory is not the intended repository.
@@ -38,11 +31,7 @@ Nothing is added to global Codex configuration.
 
 The scripts support Node 20 and newer; CI covers Node 20, 22, 24 and 26.
 
-Before setup, resolve every attachment or path named by the user once. If it is absent but the
-repository and request define the lane count, authority, and output, continue without it. Ask only
-when the missing material genuinely determines the work; never search other tasks for a substitute.
-
-Then run one command from the target repository:
+Run one command from the target repository:
 
 ```sh
 npx --yes --package 'github:s-smits/codex-luna-swarm#main' -- codex-luna-swarm --force
@@ -54,19 +43,34 @@ as part of ordinary use. Show the target diff. Review and trust the project hook
 `/hooks`; Codex skips a new or changed project hook until it is trusted. A new Codex task discovers
 the installed Skill, custom agent, and hook.
 
-If the user also requested a launch, continue in the current task. Do not wait for Skill discovery:
-invoke the installed launcher. `--force` synchronises only the Skill-owned directory, custom-agent
-file, and marked blocks in `AGENTS.md` and `.codex/config.toml`; unrelated content is preserved.
-The installer does not copy environment files or configuration from another repository.
+`--force` synchronises only the Skill-owned directory, custom-agent file, and marked blocks in
+`AGENTS.md` and `.codex/config.toml`; unrelated content is preserved. The installer does not copy
+environment files or configuration from another repository.
 
 ## Use
 
-For example:
+For a small collected investigation:
 
 ```text
 Launch 3 Luna agents: one to inspect tests, one to inspect error handling, and one to inspect docs.
 Wait for all three and summarize their evidence.
 ```
+
+For a broad 50-lane launch after installation:
+
+```text
+Use $codex-luna-swarm to launch 50 independent Luna investigators for this repository. Inspect the
+repository only far enough to create one shared evidence packet and exactly 50 distinct bounded
+lane rows. The shared packet plus each row must be self-contained; do not repeat common context in
+every row. Make each investigator exhaustive within its owned angle, expand any supplied questions
+where repository evidence warrants it, and ask for proved findings with the smallest credible
+correction. Keep the lanes read-only. Make reasonable assumptions and proceed through accepted
+transport without stopping after a plan, task list, or command.
+```
+
+To collect and apply fixes in the same task, append: “Wait for every report, verify the
+load-bearing findings, implement the confirmed fixes in the main session, run the relevant tests,
+and summarise.”
 
 Native `luna_worker` agents are preferred. If the active model catalogue rejects that agent, the
 skill uses its deterministic `codex exec` fallback without substituting another model. Native work

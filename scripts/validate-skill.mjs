@@ -8,12 +8,15 @@ const repository = join(dirname(fileURLToPath(import.meta.url)), "..");
 const skill = join(repository, "skills", "codex-luna-swarm");
 const skillFile = join(skill, "SKILL.md");
 const metadataFile = join(skill, "agents", "openai.yaml");
+const readmeFile = join(repository, "README.md");
+const agentsSnippetFile = join(skill, "assets", "AGENTS.md.snippet");
 
 function requireFile(path) {
   if (!existsSync(path) || !statSync(path).isFile()) throw new Error(`missing file: ${path}`);
 }
 
 for (const path of [
+  readmeFile,
   skillFile,
   metadataFile,
   join(skill, "scripts", "luna-lanes.cjs"),
@@ -65,6 +68,18 @@ for (const expected of [
   "launch receipt",
 ]) {
   if (!metadata.includes(expected)) throw new Error(`openai.yaml is missing ${expected}`);
+}
+
+const publicContract = `${readFileSync(readmeFile, "utf8")}\n${readFileSync(agentsSnippetFile, "utf8")}`;
+for (const expected of [
+  "do not stop to ask for an attachment",
+  "proceed to accepted transport in the same turn",
+  "propose fixes",
+]) {
+  if (!publicContract.includes(expected)) throw new Error(`public contract is missing ${expected}`);
+}
+for (const forbidden of ["The attachment in this message is required", "do nothing else"]) {
+  if (publicContract.includes(forbidden)) throw new Error(`public contract contains stale hard gate: ${forbidden}`);
 }
 
 process.stdout.write("Skill is valid.\n");

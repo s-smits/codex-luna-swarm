@@ -6,12 +6,21 @@ While Codex is working in the repository that should receive the skill, give it 
 URL together with the work to run:
 
 ```text
-Use https://github.com/s-smits/codex-luna-swarm in this repository and launch 50 Luna investigators
-from the attached shared instruction packet. Before launch, write an exhaustive, self-contained
-brief for each investigator. The supplied questions are starting points, not the complete scope.
-The attachment in this message is required. If it is absent, ask for it immediately and do nothing
-else.
+Use https://github.com/s-smits/codex-luna-swarm in this repository and launch 50 independent Luna
+investigators. If this message includes a shared instruction packet, use it as common evidence and
+as a set of starting points. If it does not, inspect the repository and create the shared context
+yourself; do not stop to ask for an attachment. Before launch, write exactly 50 distinct,
+self-contained briefs, each exhaustive within one bounded angle and each naming its scope, starting
+points, authority, evidence requirements, self-check, and required output. Expand supplied
+questions where repository evidence warrants it instead of treating them as the complete scope.
+Ask every lane to report proved findings and the smallest credible correction. Keep lanes read-only
+unless they have explicit, isolated write ownership. Make reasonable assumptions and complete both
+preparation and accepted transport in this turn. Do not stop after presenting a plan, task list, or
+command, and do not ask for approval unless I explicitly request a preview.
 ```
+
+For a complete investigate-and-fix pass, append: “Wait for every report, verify the load-bearing
+findings, implement the confirmed fixes in the main session, run the relevant tests, and summarise.”
 
 Codex should treat its current Git root as the target. It only needs another path when the current
 directory is not the intended repository.
@@ -29,9 +38,9 @@ Nothing is added to global Codex configuration.
 
 The scripts support Node 20 and newer; CI covers Node 20, 22, 24 and 26.
 
-Before setup, resolve every attachment or path named by the user from the current message. If a
-required input is absent, ask for it immediately. Do not browse, install, inspect the repository,
-or search other tasks first.
+Before setup, resolve every attachment or path named by the user once. If it is absent but the
+repository and request define the lane count, authority, and output, continue without it. Ask only
+when the missing material genuinely determines the work; never search other tasks for a substitute.
 
 Then run one command from the target repository:
 

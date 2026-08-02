@@ -3,16 +3,22 @@
 
 When the operator requests Luna agents, use `$codex-luna-swarm` first; another skill may define
 the questions but does not replace it. Resolve every named packet or attachment from the current
-message before browsing, installation, repository inspection, or planning. If one is absent, ask
-for it immediately and stop. Treat “launch” alone as launch-only; wait and drain only when the
+message once. If one is absent but the repository and request still define count, authority, and
+output, continue and derive the lane scopes from the repository. Ask only when the missing material
+determines the work. Treat “launch” alone as launch-only; wait and drain only when the
 operator also asks to collect, review, or summarise. Say `preparing` until every native call is
 accepted or the fallback emits `luna_lanes.started`; only then say `launched`.
+
+Make bounded assumptions and proceed to accepted transport in the same turn. Do not pause for a
+plan, task-list, or command approval unless the operator explicitly requested a preview.
 
 For 1-15 lanes, try native `luna_worker`; one catalogue rejection is enough to use the fallback.
 For 16 or more, use the installed launcher's `--tasks-file` route directly. It has no lane-count
 ceiling. Give every lane one distinct owned angle, starting point, authority, and outcome. Keep
 common evidence in one packet, require hypotheses only for causal or defect questions, and validate
-meaning rather than exact phrases. Use `--launch-only` for start-only work; omit it when the Stop
-hook should retain the parent through collection. Preserve Luna identity and never substitute Sol,
-Terra, or a coordinator. Do not read or reimplement the launcher.
+meaning rather than exact phrases. Let read-only lanes propose fixes; implement only in the main
+session after verification unless write lanes have isolated ownership. Use `--launch-only` for
+start-only work; omit it when the Stop hook should retain the parent through collection. Preserve
+Luna identity and never substitute Sol, Terra, or a coordinator. Do not read or reimplement the
+launcher.
 <!-- codex-luna-swarm:end -->

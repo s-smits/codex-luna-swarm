@@ -11,9 +11,10 @@ keep preparation smaller than the work delegated to the lanes.
 ## Check required inputs first
 
 Resolve every packet, attachment, and user-supplied path named in the current message before
-browsing, installation, repository inspection, or lane planning. If a required input is absent,
-ask for it immediately and stop. Do not search earlier tasks, substitute a similar file, or perform
-setup while waiting.
+browsing, installation, repository inspection, or lane planning. If one is absent but the
+repository and request still define the lane count, authority, and output, continue without it and
+build the scopes from the repository. Ask only when the missing material genuinely determines the
+work. Do not search earlier tasks or substitute a similar file.
 
 ## Interpret the requested terminal
 
@@ -23,6 +24,10 @@ setup while waiting.
   return the requested synthesis.
 - Treat the verb “launch” by itself as launch-only. Do not ask a clarifying question merely to add
   collection work.
+
+When the repository, count, authority, and requested output are sufficient, make bounded scope
+assumptions and proceed. Do not stop after presenting a plan, task list, or command unless the user
+asked for a preview or approval. Preparation and accepted transport belong in the same turn.
 
 Use precise states:
 
@@ -56,7 +61,9 @@ shape in one instruction packet. A lane row then needs only:
 
 For a broad request such as “investigate this repo”, inspect the top-level structure once and divide
 the named count into orthogonal architecture or risk slices. Do not invent a suspected defect for
-every lane and do not perform the investigation in the parent before launch.
+every lane and do not perform the investigation in the parent before launch. If the lane count is
+larger than the number of top-level components, split important components by lifecycle, authority,
+failure mode, tests, and public contract instead of asking the user to choose a decomposition.
 
 For a causal or defect investigation, also require the lane to test at least three plausible
 hypotheses when evidence suggests a mismatch, including an innocent or intentional explanation;
@@ -73,8 +80,10 @@ by JSON shape, exact count, unique names, distinct scopes, starting points, auth
 Accept equivalent wording; do not build a phrase linter.
 
 Default to read-only. A write lane must own explicit paths or responsibility and must be told that
-other agents may be editing the repository. Do not use a coordinator and do not let lanes spawn
-more lanes. Treat reports as research; verify any load-bearing finding in the main session.
+other agents may be editing the repository. When the user asks for fixes without assigning write
+ownership, let lanes propose the smallest correction and have the main session verify and implement
+confirmed fixes after collection. Do not use a coordinator and do not let lanes spawn more lanes.
+Treat reports as research; verify any load-bearing finding in the main session.
 
 ## Use native Luna for 1-15 lanes
 

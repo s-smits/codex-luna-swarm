@@ -36,9 +36,6 @@ const MAX_PROMPT_CHARACTERS = 200_000;
 const MAX_INSTRUCTION_BYTES = MAX_PROMPT_CHARACTERS * 4;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_EVENT_PREFIX_BYTES = 1024 * 1024;
-const MAX_DRAIN_REPORT_BYTES = 4 * 1024 * 1024;
-const MAX_DIAGNOSTIC_CHARACTERS = 16 * 1024;
-const THREAD_ID_PATTERN = /^[a-zA-Z0-9_-]{8,128}$/;
 
 function usage() {
   return [
@@ -408,7 +405,7 @@ function threadIdFromEvents(path) {
     if (!line.startsWith("{")) continue;
     try {
       const event = JSON.parse(line);
-      if (event.type === "thread.started" && typeof event.thread_id === "string") {
+      if (event.type === "thread.started" && typeof event.thread_id === "string" && /^[a-zA-Z0-9_-]{8,128}$/.test(event.thread_id)) {
         return event.thread_id;
       }
     } catch {
@@ -457,7 +454,7 @@ async function runLane(lane, options) {
       status: "spawn-error",
       exitCode: null,
       signal: null,
-      error: String(error),
+      error: sanitizeTerminalText(error),
       failureKind: "spawn",
       threadId: threadIdFromEvents(eventPath),
       durationMs: Date.now() - startedAt,
@@ -480,7 +477,7 @@ async function runLane(lane, options) {
       settled = true;
       resolveCompletion(value);
     };
-    child.once("error", (error) => settle({ exitCode: null, signal: null, error: String(error) }));
+    child.once("error", (error) => settle({ exitCode: null, signal: null, error: sanitizeTerminalText(error) }));
     child.once("close", (exitCode, signal) => settle({ exitCode, signal, error: null }));
   });
   const reportExists = regularFileExists(reportPath);
@@ -532,13 +529,9 @@ async function runLaneQueue(lanes, policy, run) {
 }
 
 function reportSection(result) {
-  let report = "(No report file was produced. Inspect the stderr and JSONL paths below.)";
-  if (regularFileExists(result.reportPath)) {
-    const size = statSync(result.reportPath).size;
-    report = size > MAX_DRAIN_REPORT_BYTES
-      ? `(Report omitted from drain because it is ${size} bytes; inspect the report path directly.)`
-      : sanitizeTerminalText(readFileSync(result.reportPath, "utf8")).trimEnd();
-  }
+  const report = regularFileExists(result.reportPath)
+    ? sanitizeTerminalText(readFileSync(result.reportPath, "utf8")).trimEnd()
+    : "(No report file was produced. Inspect the stderr and JSONL paths below.)";
   return [
     `## ${result.name}`,
     "",
@@ -548,7 +541,7 @@ function reportSection(result) {
     `JSONL: ${result.eventPath}`,
     `Stderr: ${result.stderrPath}`,
     result.failureKind ? `Failure kind: ${result.failureKind}` : null,
-    result.error ? `Error: ${sanitizeTerminalText(result.error)}` : null,
+    result.error ? `Error: ${result.error}` : null,
     "",
     report,
     "",
@@ -558,47 +551,8 @@ function reportSection(result) {
 }
 
 function sanitizeTerminalText(value) {
-  return String(value)
-    .replace(/\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\)?)/g, "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g, "");
+  return String(value).replace(/\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\)?)/g, "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g, "");
 }
-
-function validTimestamp(value) {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
-
-function validateDrainResult(result, lane, path) {
-  const validStatus = new Set(["completed", "failed", "spawn-error"]).has(result?.status);
-  const validExitCode = result?.exitCode === null || Number.isSafeInteger(result?.exitCode);
-  const validSignal = result?.signal === null || (
-    typeof result?.signal === "string" && /^[A-Z0-9_-]{1,32}$/.test(result.signal)
-  );
-  const validError = result?.error === null || (
-    typeof result?.error === "string" && result.error.length <= MAX_DIAGNOSTIC_CHARACTERS
-  );
-  const validFailureKind = result?.failureKind === undefined || result?.failureKind === null ||
-    new Set(["spawn", "rate-limit"]).has(result.failureKind);
-  const validThreadId = result?.threadId === null || (
-    typeof result?.threadId === "string" && THREAD_ID_PATTERN.test(result.threadId)
-  );
-  if (
-    result?.name !== lane.name ||
-    !validStatus ||
-    !validExitCode ||
-    !validSignal ||
-    !validError ||
-    !validFailureKind ||
-    !validThreadId ||
-    !Number.isSafeInteger(result?.durationMs) ||
-    result.durationMs < 0 ||
-    !validTimestamp(result?.startedAt) ||
-    !validTimestamp(result?.finishedAt)
-  ) {
-    throw new Error(`invalid Luna lane result: ${path}`);
-  }
-}
-
 async function runLunaLanes(rawManifest, options = {}) {
   const lanes = normalizeManifest(rawManifest);
   const policy = launchPolicy(rawManifest, lanes.length);
@@ -837,7 +791,12 @@ async function drainReports(outputDirectory, emit = writeStdout) {
       const artifacts = laneArtifacts(outputDir, lane.name);
       if (!regularFileExists(artifacts.resultPath)) continue;
       const result = readJson(artifacts.resultPath, `${lane.name} result`);
-      validateDrainResult(result, lane, artifacts.resultPath);
+      if (
+        result?.name !== lane.name ||
+        !new Set(["completed", "failed", "spawn-error"]).has(result?.status)
+      ) {
+        throw new Error(`invalid Luna lane result: ${artifacts.resultPath}`);
+      }
       unseen.push({
         ...result,
         reportPath: artifacts.reportPath,
@@ -974,5 +933,4 @@ module.exports = {
   parseArgs,
   quickManifest,
   runLunaLanes,
-  sanitizeTerminalText,
 };

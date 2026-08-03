@@ -103,7 +103,7 @@ that lane to finish. For launch-only work, return the accepted task IDs and stop
 Resolve `scripts/luna-lanes.cjs` relative to this `SKILL.md`. Do not read, copy, or reimplement it in
 the main session. It starts one independent `codex exec` process per lane, pins `gpt-5.6-luna`, max
 reasoning, and priority service, sends prompts over stdin without a shell, and writes per-lane
-receipts.
+receipts. Do not substitute a global or previously copied launcher for this repo-scoped script.
 
 Use the current `node` when it satisfies the target repository and package requirements. Do not
 assume `nvm`, `fnm`, or a manager path. Only when a switch is required, inspect the repository's

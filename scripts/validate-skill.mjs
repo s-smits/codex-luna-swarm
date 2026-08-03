@@ -71,14 +71,16 @@ for (const expected of [
 }
 
 const publicContract = `${readFileSync(readmeFile, "utf8")}\n${readFileSync(agentsSnippetFile, "utf8")}`;
+const normalizedPublicContract = publicContract.replace(/\s+/g, " ");
 for (const expected of [
   "Do not prepare or launch Luna agents in this turn",
   "After setup, start the actual Luna work in a new Codex task",
   "continue and derive the lane scopes from the repository",
   "proceed to accepted transport in the same turn",
   "propose fixes",
+  "never use a global or copied launcher",
 ]) {
-  if (!publicContract.includes(expected)) throw new Error(`public contract is missing ${expected}`);
+  if (!normalizedPublicContract.includes(expected)) throw new Error(`public contract is missing ${expected}`);
 }
 for (const forbidden of ["The attachment in this message is required", "do nothing else"]) {
   if (publicContract.includes(forbidden)) throw new Error(`public contract contains stale hard gate: ${forbidden}`);

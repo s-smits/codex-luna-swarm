@@ -43,6 +43,7 @@ test("installs, checks, updates, and removes only managed paths", () => {
   assert.match(firstAgents, /codex-luna-swarm:start/);
   assert.match(firstAgents, /Treat “launch” alone as launch-only/);
   assert.match(firstAgents, /luna_lanes\.started/);
+  assert.match(firstAgents, /never use a global or copied\s+launcher/);
   assert.equal((firstAgents.match(/codex-luna-swarm:start/g) ?? []).length, 1);
   const firstConfig = readFileSync(configPath, "utf8");
   assert.match(firstConfig, /\[features\]/);

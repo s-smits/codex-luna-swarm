@@ -7,7 +7,14 @@ const { tmpdir } = require("node:os");
 const { dirname, join } = require("node:path");
 const { after, test } = require("node:test");
 const launcherPath = join(__dirname, "..", "skills", "codex-luna-swarm", "scripts", "luna-lanes.cjs");
-const { drainReports, normalizeManifest, parseArgs, quickManifest, runLunaLanes } = require(launcherPath);
+const {
+  drainReports,
+  normalizeManifest,
+  parseArgs,
+  quickManifest,
+  runLunaLanes,
+  sanitizeTerminalText,
+} = require(launcherPath);
 
 const roots = [];
 
@@ -150,6 +157,13 @@ test("launches independent Luna lanes concurrently without shell interpolation",
     tamperedResult.reportPath = outsideReport;
     writeFileSync(resultPath, `${JSON.stringify(tamperedResult, null, 2)}\n`);
 
+    tamperedResult.threadId = "thread\nspoofed";
+    writeFileSync(resultPath, `${JSON.stringify(tamperedResult, null, 2)}\n`);
+    await assert.rejects(drainReports(outputDir, async () => {}), /invalid Luna lane result/);
+    tamperedResult.threadId = "thread-read_lane";
+    writeFileSync(resultPath, `${JSON.stringify(tamperedResult, null, 2)}\n`);
+    writeFileSync(join(outputDir, "read_lane.md"), "code from read_lane \u001b[31mred\u001b[0m\r\n\u202Espoof\n");
+
     await assert.rejects(
       drainReports(outputDir, async () => {
         throw new Error("display failed");
@@ -162,6 +176,8 @@ test("launches independent Luna lanes concurrently without shell interpolation",
     });
     assert.deepEqual(firstDrain.names, ["read_lane", "rate_limited", "write_lane"]);
     assert.match(displayed, /## read_lane[\s\S]*code from read_lane/);
+    assert.match(displayed, /code from read_lane red\nspoof/);
+    assert.doesNotMatch(displayed, /[\u001b\r\u202e]/);
     assert.match(displayed, /## write_lane[\s\S]*code from write_lane/);
     assert.doesNotMatch(displayed, /must not be drained/);
     const secondDrain = await drainReports(outputDir, async () => {
@@ -172,6 +188,13 @@ test("launches independent Luna lanes concurrently without shell interpolation",
     if (previousEvents === undefined) delete process.env.LUNA_FAKE_EVENTS;
     else process.env.LUNA_FAKE_EVENTS = previousEvents;
   }
+});
+
+test("sanitizes terminal control and bidirectional text without changing ordinary prose", () => {
+  assert.equal(
+    sanitizeTerminalText("plain\r\n\u001b[32mgreen\u001b[0m\u0000\u202Etext"),
+    "plain\ngreentext",
+  );
 });
 
 test("rejects ambiguous or unsafe lane manifests before launch", () => {

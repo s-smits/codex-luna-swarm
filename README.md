@@ -38,10 +38,12 @@ npx --yes --package 'github:s-smits/codex-luna-swarm#main' -- codex-luna-swarm -
 ```
 
 The command obtains the current `main`, installs or updates only the managed paths, and checks the
-result before returning success. Do not clone this repository separately or run its upstream tests
-as part of ordinary use. Show the target diff. Review and trust the project hook once through Codex
-`/hooks`; Codex skips a new or changed project hook until it is trusted. A new Codex task discovers
-the installed Skill, custom agent, and hook.
+result before returning success. Rerun the same setup command when the installed revision is
+unknown; it re-resolves `main` and refreshes the managed files. Do not use a global or previously
+copied launcher in place of the script beside the installed repo-scoped Skill. Do not clone this
+repository separately or run its upstream tests as part of ordinary use. Show the target diff.
+Review and trust the project hook once through Codex `/hooks`; Codex skips a new or changed project
+hook until it is trusted. A new Codex task discovers the installed Skill, custom agent, and hook.
 
 `--force` synchronises only the Skill-owned directory, custom-agent file, and marked blocks in
 `AGENTS.md` and `.codex/config.toml`; unrelated content is preserved. The installer does not copy
@@ -115,7 +117,8 @@ individual lane sandboxes remain read-only. Use the current compatible `node`; n
 `nvm` or `fnm` path merely because a repository has a runtime file.
 
 The fallback's `--drain` command prints each newly finished report once. The main agent does not
-need to read or reproduce the launcher.
+need to read or reproduce the launcher. Drained terminal text is bounded and stripped of terminal
+control characters; the raw lane reports and combined archive remain unchanged on disk.
 
 ## Check or remove
 
